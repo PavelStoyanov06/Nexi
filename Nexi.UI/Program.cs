@@ -4,7 +4,7 @@ using System;
 
 namespace Nexi.UI
 {
-    internal sealed class Program
+    internal class Program
     {
         // Initialization code. Don't use any Avalonia, third-party APIs or any
         // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
@@ -17,8 +17,7 @@ namespace Nexi.UI
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
                 .UsePlatformDetect()
-                .WithInterFont()
                 .LogToTrace()
-                .UseReactiveUI();
+                .UseReactiveUI(); // This adds ReactiveUI support
     }
 }

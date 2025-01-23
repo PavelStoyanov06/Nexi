@@ -1,20 +1,161 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Nexi.UI.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        xmlns:vm="using:Nexi.UI.ViewModels"
+        xmlns:material="using:Material.Icons.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
         x:Class="Nexi.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="Nexi.UI">
+        Title="Nexi"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen">
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+	<Design.DataContext>
+		<vm:MainWindowViewModel/>
+	</Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+	<Window.Styles>
+		<Style Selector="Button.iconButton">
+			<Setter Property="Width" Value="50"/>
+			<Setter Property="Height" Value="50"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Margin" Value="5"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="Padding" Value="12,0"/>
+		</Style>
 
+		<Style Selector="material|MaterialIcon">
+			<Setter Property="Width" Value="24"/>
+			<Setter Property="Height" Value="24"/>
+		</Style>
+
+		<Style Selector="TextBlock">
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+
+		<Style Selector="StackPanel.sidebar">
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Width" Duration="0:0:0.2"/>
+				</Transitions>
+			</Setter>
+		</Style>
+	</Window.Styles>
+
+	<Panel>
+		<Border Background="#1E1E1E">
+			<DockPanel>
+				<!-- Left Sidebar -->
+				<StackPanel Classes="sidebar" Width="{Binding SidebarWidth}" DockPanel.Dock="Left" Background="#2D2D2D">
+					<Button Classes="iconButton" Margin="5,20,5,5" Command="{Binding ToggleSidebarCommand}">
+						<DockPanel>
+							<material:MaterialIcon Kind="Menu" Foreground="#B388FF"/>
+							<TextBlock Text="Menu"
+                                     Margin="15,0,0,0"
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSidebarExpanded}"/>
+						</DockPanel>
+					</Button>
+
+					<Button Classes="iconButton">
+						<DockPanel>
+							<material:MaterialIcon Kind="Chat" Foreground="#B388FF"/>
+							<TextBlock Text="Chat"
+                                     Margin="15,0,0,0"
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSidebarExpanded}"/>
+						</DockPanel>
+					</Button>
+
+					<Button Classes="iconButton">
+						<DockPanel>
+							<material:MaterialIcon Kind="History" Foreground="#B388FF"/>
+							<TextBlock Text="History"
+                                     Margin="15,0,0,0"
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSidebarExpanded}"/>
+						</DockPanel>
+					</Button>
+
+					<Button Classes="iconButton" Command="{Binding OpenSettingsCommand}">
+						<DockPanel>
+							<material:MaterialIcon Kind="Settings" Foreground="#B388FF"/>
+							<TextBlock Text="Settings"
+                                     Margin="15,0,0,0"
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSidebarExpanded}"/>
+						</DockPanel>
+					</Button>
+				</StackPanel>
+
+				<!-- Main Content Area -->
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="*"/>
+						<RowDefinition Height="Auto"/>
+					</Grid.RowDefinitions>
+
+					<!-- Chat Display Area -->
+					<ScrollViewer Grid.Row="0" Margin="20">
+						<ItemsControl ItemsSource="{Binding ChatMessages}">
+							<ItemsControl.DataTemplates>
+								<DataTemplate DataType="vm:ChatMessage">
+									<Border Margin="0,5"
+                                            CornerRadius="10"
+                                            Background="{Binding IsUser, Converter={StaticResource MessageBackgroundConverter}}"
+                                            HorizontalAlignment="{Binding IsUser, Converter={StaticResource MessageAlignmentConverter}}">
+										<TextBlock Text="{Binding Content}"
+                                                 Margin="10"
+                                                 TextWrapping="Wrap"
+                                                 MaxWidth="600"/>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.DataTemplates>
+						</ItemsControl>
+					</ScrollViewer>
+
+					<!-- Input Area -->
+					<Grid Grid.Row="1" Margin="20,10,20,20">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="Auto"/>
+							<ColumnDefinition Width="Auto"/>
+						</Grid.ColumnDefinitions>
+
+						<TextBox Grid.Column="0"
+                                 Text="{Binding InputText}"
+                                 Watermark="Type your message..."
+                                 Height="40"
+                                 CornerRadius="20"
+                                 VerticalContentAlignment="Center"
+                                 Padding="20,0"/>
+
+						<StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0,0,0">
+							<Button Classes="sendButton"
+                                    Command="{Binding SendMessageCommand}">
+								<material:MaterialIcon Kind="Send" Foreground="#B388FF"/>
+							</Button>
+							<TextBlock Text="Send"
+                                     VerticalAlignment="Center"
+                                     Foreground="#B388FF"
+                                     Margin="5,0,10,0"/>
+						</StackPanel>
+
+						<StackPanel Grid.Column="2" Orientation="Horizontal">
+							<Button Classes="sendButton"
+                                    Command="{Binding ToggleVoiceCommand}">
+								<material:MaterialIcon Kind="Microphone" Foreground="#B388FF"/>
+							</Button>
+							<TextBlock Text="Voice"
+                                     VerticalAlignment="Center"
+                                     Foreground="#B388FF"
+                                     Margin="5,0,0,0"/>
+						</StackPanel>
+					</Grid>
+				</Grid>
+			</DockPanel>
+		</Border>
+	</Panel>
 </Window>
