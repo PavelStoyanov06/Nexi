@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Nexi.Desktop.ViewModels"
+             x:Class="Nexi.Desktop.Views.NotificationsView"
+             x:DataType="vm:NotificationsViewModel">
+  <DockPanel>
+    <TextBlock Text="Notifications"
+              DockPanel.Dock="Top"
+              Margin="16"/>
+    <ListBox ItemsSource="{CompiledBinding Notifications}"/>
+  </DockPanel>
+</UserControl>

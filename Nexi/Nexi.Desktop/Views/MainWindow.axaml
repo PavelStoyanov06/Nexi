@@ -3,18 +3,99 @@
         xmlns:vm="using:Nexi.Desktop.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        xmlns:views="using:Nexi.Desktop.Views"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
         x:Class="Nexi.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="Nexi.Desktop">
+        Title="Nexi AI Assistant"
+        TransparencyLevelHint="AcrylicBlur"
+        Background="Transparent"
+        ExtendClientAreaToDecorationsHint="True">
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+  <Design.DataContext>
+    <vm:MainWindowViewModel/>
+  </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+  <Panel>
+    <ExperimentalAcrylicBorder IsHitTestVisible="False">
+      <ExperimentalAcrylicBorder.Material>
+        <ExperimentalAcrylicMaterial
+            BackgroundSource="Digger"
+            TintColor="{DynamicResource SystemAltHighColor}"
+            TintOpacity="1"
+            MaterialOpacity="0.65" />
+      </ExperimentalAcrylicBorder.Material>
+    </ExperimentalAcrylicBorder>
 
+    <DockPanel>
+      <!-- Sidebar -->
+      <Border DockPanel.Dock="Left"
+              Width="{CompiledBinding SidebarWidth}"
+              Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+        <DockPanel>
+          <!-- Toggle Button -->
+          <Button DockPanel.Dock="Top"
+                  Command="{CompiledBinding ToggleSidebarCommand}"
+                  Classes="transparent">
+            <PathIcon Data="{StaticResource MenuIcon}"/>
+          </Button>
+
+          <!-- Navigation Items -->
+          <StackPanel DockPanel.Dock="Top" Spacing="4">
+            <Button Command="{CompiledBinding NavigateToCommand}"
+                    CommandParameter="chat"
+                    Classes="nav-button">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Data="{StaticResource ChatIcon}"/>
+                <TextBlock Text="Chat"
+                          IsVisible="{CompiledBinding IsSidebarExpanded}"/>
+              </StackPanel>
+            </Button>
+
+            <Button Command="{CompiledBinding NavigateToCommand}"
+                    CommandParameter="notifications"
+                    Classes="nav-button">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Data="{StaticResource BellIcon}"/>
+                <TextBlock Text="Notifications"
+                          IsVisible="{CompiledBinding IsSidebarExpanded}"/>
+              </StackPanel>
+            </Button>
+
+            <Button Command="{CompiledBinding NavigateToCommand}"
+                    CommandParameter="settings"
+                    Classes="nav-button">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Data="{StaticResource SettingsIcon}"/>
+                <TextBlock Text="Settings"
+                          IsVisible="{CompiledBinding IsSidebarExpanded}"/>
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- Theme Toggle -->
+          <Button DockPanel.Dock="Bottom"
+                  Command="{CompiledBinding ToggleThemeCommand}"
+                  Classes="transparent">
+            <PathIcon Data="{CompiledBinding ThemeIcon}"/>
+          </Button>
+        </DockPanel>
+      </Border>
+
+      <!-- Main Content Area -->
+      <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top"
+                Height="48"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+          <TextBlock Text="Nexi AI Assistant"
+                    VerticalAlignment="Center"
+                    Margin="16,0"/>
+        </Border>
+
+        <!-- Content Area -->
+        <ContentControl Content="{CompiledBinding CurrentView}"/>
+      </DockPanel>
+    </DockPanel>
+  </Panel>
 </Window>

@@ -1,8 +1,11 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using ReactiveUI;
 
 namespace Nexi.Desktop.ViewModels
 {
-    public class ViewModelBase : ObservableObject
+    public class ViewModelBase : ReactiveObject
     {
+        public ViewModelBase()
+        {
+        }
     }
 }
