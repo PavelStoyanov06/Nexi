@@ -80,4 +80,4 @@ A desktop application built with .NET 8 using Avalonia UI and MVVM pattern. The 
 - Voice input parameters
 - System command permissions
 - API keys for cloud services
-## ⚠️ This is to be taken as reference, since the technologies in use during the project are subject to change.
+<h2> ⚠️ This is to be taken as reference, since the technologies in use during the project are subject to change. </h2>
