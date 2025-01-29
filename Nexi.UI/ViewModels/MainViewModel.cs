@@ -1,4 +1,5 @@
-﻿using ReactiveUI;
+﻿using Avalonia;
+using ReactiveUI;
 using System.Windows.Input;
 
 namespace Nexi.UI.ViewModels;
@@ -14,11 +15,13 @@ public class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         UpdateSidebarWidth();
+        UpdateIconMargin();
 
         // Initialize commands
         ToggleSidebarCommand = ReactiveCommand.Create(() =>
         {
             IsSidebarExpanded = !IsSidebarExpanded;
+            UpdateIconMargin();
         });
 
         HomeCommand = ReactiveCommand.Create(NavigateToHome);
@@ -29,6 +32,13 @@ public class MainViewModel : ViewModelBase
 
         // Set initial page
         NavigateToHome();
+    }
+
+    public Thickness IconMargin => IsSidebarExpanded ? new Thickness(0) : new Thickness(8, 0, 0, 0);
+
+    private void UpdateIconMargin()
+    {
+        this.RaisePropertyChanged(nameof(IconMargin));
     }
 
     public bool IsSidebarExpanded
