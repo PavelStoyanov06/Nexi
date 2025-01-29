@@ -8,8 +8,6 @@
              x:Class="Nexi.UI.Views.MainView"
              x:DataType="vm:MainViewModel">
   <Design.DataContext>
-    <!-- This only sets the DataContext for the previewer in an IDE,
-         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
     <vm:MainViewModel />
   </Design.DataContext>
 
@@ -22,7 +20,14 @@
       <Setter Property="Margin" Value="4,2"/>
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="12,0"/>
+    </Style>
+
+    <!-- Centered button style for collapsed state -->
+    <Style Selector="Button.sidebar-button.collapsed">
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="Padding" Value="0"/>
     </Style>
 
     <Style Selector="Button.sidebar-button:pointerover">
@@ -61,79 +66,86 @@
             Width="{Binding SidebarWidth}"
             Background="#1E1E1E">
       <DockPanel>
-        <!-- Header with Toggle Button and Title -->
-        <DockPanel DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
-          <Button Command="{Binding ToggleSidebarCommand}"
-                  Classes="sidebar-button"
-                  Width="40"
-                  Padding="8"
-                  DockPanel.Dock="Left">
-            <material:MaterialIcon Kind="Menu"/>
-          </Button>
+        <!-- Header with Title and Toggle Button -->
+        <Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+
           <TextBlock Text="NEXI"
                    Classes="title"
+                   Grid.Column="0"
                    IsVisible="{Binding IsSidebarExpanded}"/>
-        </DockPanel>
+
+          <Button Grid.Column="1"
+                  Command="{Binding ToggleSidebarCommand}"
+                  Classes="sidebar-button"
+                  Width="40"
+                  Padding="8">
+            <material:MaterialIcon Kind="Menu"/>
+          </Button>
+        </Grid>
 
         <!-- Menu Items -->
         <StackPanel Margin="4,8,4,4">
           <!-- Menu Items Container - Expanded -->
           <StackPanel IsVisible="{Binding IsSidebarExpanded}">
             <Button Classes="sidebar-button" Command="{Binding HomeCommand}">
-              <DockPanel>
-                <material:MaterialIcon Kind="Home" Margin="12,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <material:MaterialIcon Kind="Home"/>
                 <TextBlock Text="Home" VerticalAlignment="Center"/>
-              </DockPanel>
+              </StackPanel>
             </Button>
 
             <Button Classes="sidebar-button" Command="{Binding SettingsCommand}">
-              <DockPanel>
-                <material:MaterialIcon Kind="Cog" Margin="12,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <material:MaterialIcon Kind="Cog"/>
                 <TextBlock Text="Settings" VerticalAlignment="Center"/>
-              </DockPanel>
+              </StackPanel>
             </Button>
 
             <Button Classes="sidebar-button" Command="{Binding VoiceCommand}">
-              <DockPanel>
-                <material:MaterialIcon Kind="Microphone" Margin="12,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <material:MaterialIcon Kind="Microphone"/>
                 <TextBlock Text="Voice Commands" VerticalAlignment="Center"/>
-              </DockPanel>
+              </StackPanel>
             </Button>
 
             <Button Classes="sidebar-button" Command="{Binding AIModelsCommand}">
-              <DockPanel>
-                <material:MaterialIcon Kind="Brain" Margin="12,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <material:MaterialIcon Kind="Brain"/>
                 <TextBlock Text="AI Models" VerticalAlignment="Center"/>
-              </DockPanel>
+              </StackPanel>
             </Button>
 
             <Button Classes="sidebar-button" Command="{Binding AboutCommand}">
-              <DockPanel>
-                <material:MaterialIcon Kind="Information" Margin="12,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <material:MaterialIcon Kind="Information"/>
                 <TextBlock Text="About" VerticalAlignment="Center"/>
-              </DockPanel>
+              </StackPanel>
             </Button>
           </StackPanel>
 
           <!-- Menu Items Container - Collapsed -->
           <StackPanel IsVisible="{Binding !IsSidebarExpanded}">
-            <Button Classes="sidebar-button" Command="{Binding HomeCommand}">
+            <Button Classes="sidebar-button collapsed" Command="{Binding HomeCommand}">
               <material:MaterialIcon Kind="Home"/>
             </Button>
 
-            <Button Classes="sidebar-button" Command="{Binding SettingsCommand}">
+            <Button Classes="sidebar-button collapsed" Command="{Binding SettingsCommand}">
               <material:MaterialIcon Kind="Cog"/>
             </Button>
 
-            <Button Classes="sidebar-button" Command="{Binding VoiceCommand}">
+            <Button Classes="sidebar-button collapsed" Command="{Binding VoiceCommand}">
               <material:MaterialIcon Kind="Microphone"/>
             </Button>
 
-            <Button Classes="sidebar-button" Command="{Binding AIModelsCommand}">
+            <Button Classes="sidebar-button collapsed" Command="{Binding AIModelsCommand}">
               <material:MaterialIcon Kind="Brain"/>
             </Button>
 
-            <Button Classes="sidebar-button" Command="{Binding AboutCommand}">
+            <Button Classes="sidebar-button collapsed" Command="{Binding AboutCommand}">
               <material:MaterialIcon Kind="Information"/>
             </Button>
           </StackPanel>
