@@ -1,1 +1,2 @@
-A versatile AI companion that is capable of controlling your desktop!
+# Nexi
+- A versatile AI companion that is capable of controlling your desktop!
