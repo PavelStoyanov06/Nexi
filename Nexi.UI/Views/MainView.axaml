@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:material="using:Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Nexi.UI.ViewModels"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Nexi.UI.Views.MainView"
@@ -11,4 +12,104 @@
          to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
     <vm:MainViewModel />
   </Design.DataContext>
+
+  <UserControl.Styles>
+    <Style Selector="Button.sidebar-button">
+      <Setter Property="Height" Value="48"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="Margin" Value="4"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
+    <Style Selector="Button.sidebar-button:pointerover">
+      <Setter Property="Background" Value="#40A880E4"/>
+    </Style>
+
+    <Style Selector="StackPanel.menu-item">
+      <Setter Property="Orientation" Value="Horizontal"/>
+      <Setter Property="Spacing" Value="16"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid ColumnDefinitions="Auto,*">
+    <!-- Sidebar -->
+    <Border Grid.Column="0"
+            Width="{Binding SidebarWidth}"
+            Background="#1E1E1E">
+      <DockPanel>
+        <!-- Toggle Button -->
+        <Button DockPanel.Dock="Top"
+                Command="{Binding ToggleSidebarCommand}"
+                Margin="8"
+                Padding="8"
+                Background="Transparent">
+          <material:MaterialIcon Kind="Menu" />
+        </Button>
+
+        <!-- Menu Items -->
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="4,0">
+          <!-- Home -->
+          <Button Classes="sidebar-button"
+                  Command="{Binding HomeCommand}">
+            <StackPanel Classes="menu-item">
+              <material:MaterialIcon Kind="Home" />
+              <TextBlock Text="Home"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsSidebarExpanded}"/>
+            </StackPanel>
+          </Button>
+
+          <!-- Settings -->
+          <Button Classes="sidebar-button"
+                  Command="{Binding SettingsCommand}">
+            <StackPanel Classes="menu-item">
+              <material:MaterialIcon Kind="Cog" />
+              <TextBlock Text="Settings"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsSidebarExpanded}"/>
+            </StackPanel>
+          </Button>
+
+          <!-- Voice -->
+          <Button Classes="sidebar-button"
+                  Command="{Binding VoiceCommand}">
+            <StackPanel Classes="menu-item">
+              <material:MaterialIcon Kind="Microphone" />
+              <TextBlock Text="Voice Commands"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsSidebarExpanded}"/>
+            </StackPanel>
+          </Button>
+
+          <!-- AI Models -->
+          <Button Classes="sidebar-button"
+                  Command="{Binding AIModelsCommand}">
+            <StackPanel Classes="menu-item">
+              <material:MaterialIcon Kind="Brain" />
+              <TextBlock Text="AI Models"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsSidebarExpanded}"/>
+            </StackPanel>
+          </Button>
+
+          <!-- About -->
+          <Button Classes="sidebar-button"
+                  Command="{Binding AboutCommand}">
+            <StackPanel Classes="menu-item">
+              <material:MaterialIcon Kind="Information" />
+              <TextBlock Text="About"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsSidebarExpanded}"/>
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Main Content -->
+    <ContentControl Grid.Column="1"
+                  Content="{Binding CurrentPage}"/>
+  </Grid>
 </UserControl>

@@ -3,10 +3,24 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexi.UI", "Nexi.UI\Nexi.UI.csproj", "{A602CC25-0AE7-42DB-9CAC-1BFE4A5FD9C4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexi.UI.Desktop", "Nexi.UI.Desktop\Nexi.UI.Desktop.csproj", "{D5B8FB59-3B1F-42BE-BB4B-BE5EA6C42216}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A602CC25-0AE7-42DB-9CAC-1BFE4A5FD9C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A602CC25-0AE7-42DB-9CAC-1BFE4A5FD9C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A602CC25-0AE7-42DB-9CAC-1BFE4A5FD9C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A602CC25-0AE7-42DB-9CAC-1BFE4A5FD9C4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5B8FB59-3B1F-42BE-BB4B-BE5EA6C42216}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5B8FB59-3B1F-42BE-BB4B-BE5EA6C42216}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5B8FB59-3B1F-42BE-BB4B-BE5EA6C42216}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5B8FB59-3B1F-42BE-BB4B-BE5EA6C42216}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
