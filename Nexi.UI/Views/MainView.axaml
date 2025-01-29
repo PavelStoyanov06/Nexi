@@ -92,14 +92,13 @@
           <!-- Home -->
           <Button Classes="sidebar-button"
                   Command="{Binding HomeCommand}">
-            <Grid>
-              <Grid Classes="icon-container"
-                    Margin="{Binding IconMargin}">
+            <Grid HorizontalAlignment="{Binding ButtonContentAlignment}">
+              <Grid Classes="icon-container">
                 <material:MaterialIcon Kind="Home"/>
               </Grid>
-              <StackPanel Classes="menu-item" Margin="48,0,0,0">
-                <TextBlock Text="Home"
-                         IsVisible="{Binding IsSidebarExpanded}"/>
+              <StackPanel Classes="menu-item" Margin="48,0,0,0"
+                        IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="Home"/>
               </StackPanel>
             </Grid>
           </Button>
@@ -107,14 +106,13 @@
           <!-- Settings -->
           <Button Classes="sidebar-button"
                   Command="{Binding SettingsCommand}">
-            <Grid>
-              <Grid Classes="icon-container"
-                    Margin="{Binding IconMargin}">
+            <Grid HorizontalAlignment="{Binding ButtonContentAlignment}">
+              <Grid Classes="icon-container">
                 <material:MaterialIcon Kind="Cog"/>
               </Grid>
-              <StackPanel Classes="menu-item" Margin="48,0,0,0">
-                <TextBlock Text="Settings"
-                         IsVisible="{Binding IsSidebarExpanded}"/>
+              <StackPanel Classes="menu-item" Margin="48,0,0,0"
+                        IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="Settings"/>
               </StackPanel>
             </Grid>
           </Button>
@@ -122,14 +120,13 @@
           <!-- Voice -->
           <Button Classes="sidebar-button"
                   Command="{Binding VoiceCommand}">
-            <Grid>
-              <Grid Classes="icon-container"
-                    Margin="{Binding IconMargin}">
+            <Grid HorizontalAlignment="{Binding ButtonContentAlignment}">
+              <Grid Classes="icon-container">
                 <material:MaterialIcon Kind="Microphone"/>
               </Grid>
-              <StackPanel Classes="menu-item" Margin="48,0,0,0">
-                <TextBlock Text="Voice Commands"
-                         IsVisible="{Binding IsSidebarExpanded}"/>
+              <StackPanel Classes="menu-item" Margin="48,0,0,0"
+                        IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="Voice Commands"/>
               </StackPanel>
             </Grid>
           </Button>
@@ -137,14 +134,13 @@
           <!-- AI Models -->
           <Button Classes="sidebar-button"
                   Command="{Binding AIModelsCommand}">
-            <Grid>
-              <Grid Classes="icon-container"
-                    Margin="{Binding IconMargin}">
+            <Grid HorizontalAlignment="{Binding ButtonContentAlignment}">
+              <Grid Classes="icon-container">
                 <material:MaterialIcon Kind="Brain"/>
               </Grid>
-              <StackPanel Classes="menu-item" Margin="48,0,0,0">
-                <TextBlock Text="AI Models"
-                         IsVisible="{Binding IsSidebarExpanded}"/>
+              <StackPanel Classes="menu-item" Margin="48,0,0,0"
+                        IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="AI Models"/>
               </StackPanel>
             </Grid>
           </Button>
@@ -152,14 +148,13 @@
           <!-- About -->
           <Button Classes="sidebar-button"
                   Command="{Binding AboutCommand}">
-            <Grid>
-              <Grid Classes="icon-container"
-                    Margin="{Binding IconMargin}">
+            <Grid HorizontalAlignment="{Binding ButtonContentAlignment}">
+              <Grid Classes="icon-container">
                 <material:MaterialIcon Kind="Information"/>
               </Grid>
-              <StackPanel Classes="menu-item" Margin="48,0,0,0">
-                <TextBlock Text="About"
-                         IsVisible="{Binding IsSidebarExpanded}"/>
+              <StackPanel Classes="menu-item" Margin="48,0,0,0"
+                        IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="About"/>
               </StackPanel>
             </Grid>
           </Button>

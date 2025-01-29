@@ -1,4 +1,5 @@
 ﻿using Avalonia;
+using Avalonia.Layout;
 using ReactiveUI;
 using System.Windows.Input;
 
@@ -12,16 +13,18 @@ public class MainViewModel : ViewModelBase
     private const double EXPANDED_WIDTH = 250;
     private const double COLLAPSED_WIDTH = 60;
 
+    public HorizontalAlignment ButtonContentAlignment =>
+        IsSidebarExpanded ? HorizontalAlignment.Left : HorizontalAlignment.Center;
+
     public MainViewModel()
     {
         UpdateSidebarWidth();
-        UpdateIconMargin();
 
         // Initialize commands
         ToggleSidebarCommand = ReactiveCommand.Create(() =>
         {
             IsSidebarExpanded = !IsSidebarExpanded;
-            UpdateIconMargin();
+            this.RaisePropertyChanged(nameof(ButtonContentAlignment));
         });
 
         HomeCommand = ReactiveCommand.Create(NavigateToHome);
