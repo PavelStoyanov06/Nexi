@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Nexi.UI.ViewModels
 {
-    public class VoiceCommandsViewModel : ViewModelBase
+    public class ChatHistoryViewModel : ViewModelBase
     {
     }
 }

@@ -11,149 +11,151 @@
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <UserControl.Styles>
-    <!-- Button styles -->
-    <Style Selector="Button.sidebar-button">
-      <Setter Property="Height" Value="48"/>
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="CornerRadius" Value="4"/>
-      <Setter Property="Margin" Value="4,2"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="HorizontalContentAlignment" Value="Left"/>
-      <Setter Property="Padding" Value="12,0"/>
-    </Style>
+	<UserControl.Styles>
+		<!-- Button styles -->
+		<Style Selector="Button.sidebar-button">
+			<Setter Property="Height" Value="40"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Margin" Value="4,2"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Padding" Value="12,0"/>
+		</Style>
 
-    <!-- Centered button style for collapsed state -->
-    <Style Selector="Button.sidebar-button.collapsed">
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="Padding" Value="0"/>
-    </Style>
+		<!-- Centered button style for collapsed state -->
+		<Style Selector="Button.sidebar-button.collapsed">
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Padding" Value="0"/>
+		</Style>
 
-    <Style Selector="Button.sidebar-button:pointerover">
-      <Setter Property="Background" Value="#40A880E4"/>
-    </Style>
+		<Style Selector="Button.sidebar-button:pointerover">
+			<Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
+			<Setter Property="Opacity" Value="0.6"/>
+		</Style>
 
-    <!-- Icon styling -->
-    <Style Selector="material|MaterialIcon">
-      <Setter Property="Width" Value="24"/>
-      <Setter Property="Height" Value="24"/>
-    </Style>
+		<!-- Title text -->
+		<Style Selector="TextBlock.title">
+			<Setter Property="FontFamily" Value="Cascadia Code"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Margin" Value="12,0,0,0"/>
+		</Style>
 
-    <!-- Title text -->
-    <Style Selector="TextBlock.title">
-      <Setter Property="FontFamily" Value="Cascadia Code"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Foreground" Value="#A880E4"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Margin" Value="12,0,0,0"/>
-    </Style>
+		<!-- Icon styling -->
+		<Style Selector="material|MaterialIcon">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+		</Style>
 
-    <!-- Sidebar transitions -->
-    <Style Selector="Border.sidebar">
-      <Setter Property="Transitions">
-        <Transitions>
-          <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut"/>
-        </Transitions>
-      </Setter>
-    </Style>
-  </UserControl.Styles>
+		<!-- Text styling -->
+		<Style Selector="TextBlock">
+			<Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+		</Style>
 
-  <Grid ColumnDefinitions="Auto,*">
-    <!-- Sidebar -->
-    <Border Grid.Column="0"
-            Classes="sidebar"
-            Width="{Binding SidebarWidth}"
-            Background="#1E1E1E">
-      <DockPanel>
-        <!-- Header with Title and Toggle Button -->
-        <Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
+		<!-- Sidebar transitions -->
+		<Style Selector="Border.sidebar">
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+				</Transitions>
+			</Setter>
+		</Style>
+	</UserControl.Styles>
 
-          <TextBlock Text="NEXI"
-                   Classes="title"
-                   Grid.Column="0"
-                   IsVisible="{Binding IsSidebarExpanded}"/>
+	<Grid ColumnDefinitions="Auto,*">
+		<!-- Sidebar -->
+		<Border Grid.Column="0"
+                Classes="sidebar"
+                Width="{Binding SidebarWidth}"
+                Background="{DynamicResource SystemChromeMediumLowColor}">
+			<DockPanel>
+				<!-- Header with Title and Toggle Button -->
+				<Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="*"/>
+						<ColumnDefinition Width="Auto"/>
+					</Grid.ColumnDefinitions>
 
-          <Button Grid.Column="1"
-                  Command="{Binding ToggleSidebarCommand}"
-                  Classes="sidebar-button"
-                  Width="40"
-                  Padding="8">
-            <material:MaterialIcon Kind="Menu"/>
-          </Button>
-        </Grid>
+					<TextBlock Text="NEXI"
+                             Classes="title"
+                             Grid.Column="0"
+                             IsVisible="{Binding IsSidebarExpanded}"/>
 
-        <!-- Menu Items -->
-        <StackPanel Margin="4,8,4,4">
-          <!-- Menu Items Container - Expanded -->
-          <StackPanel IsVisible="{Binding IsSidebarExpanded}">
-            <Button Classes="sidebar-button" Command="{Binding HomeCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <material:MaterialIcon Kind="Home"/>
-                <TextBlock Text="Home" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
+					<Button Grid.Column="1"
+                            Command="{Binding ToggleSidebarCommand}"
+                            Classes="sidebar-button"
+                            Width="40">
+						<material:MaterialIcon Kind="Menu"/>
+					</Button>
+				</Grid>
 
-            <Button Classes="sidebar-button" Command="{Binding SettingsCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <material:MaterialIcon Kind="Cog"/>
-                <TextBlock Text="Settings" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
+				<!-- Menu Items -->
+				<StackPanel Margin="4,8,4,4">
+					<!-- New Chat -->
+					<Button Classes="sidebar-button" Command="{Binding NewChatCommand}">
+						<Grid>
+							<StackPanel Orientation="Horizontal"
+                                      Spacing="12"
+                                      VerticalAlignment="Center">
+								<material:MaterialIcon Kind="Plus"/>
+								<TextBlock Text="New Chat"
+                                         IsVisible="{Binding IsSidebarExpanded}"
+                                         VerticalAlignment="Center"/>
+							</StackPanel>
+						</Grid>
+					</Button>
 
-            <Button Classes="sidebar-button" Command="{Binding VoiceCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <material:MaterialIcon Kind="Microphone"/>
-                <TextBlock Text="Voice Commands" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
+					<!-- Chat History -->
+					<Button Classes="sidebar-button" Command="{Binding ChatHistoryCommand}">
+						<Grid>
+							<StackPanel Orientation="Horizontal"
+                                      Spacing="12"
+                                      VerticalAlignment="Center">
+								<material:MaterialIcon Kind="History"/>
+								<TextBlock Text="Chat History"
+                                         IsVisible="{Binding IsSidebarExpanded}"
+                                         VerticalAlignment="Center"/>
+							</StackPanel>
+						</Grid>
+					</Button>
 
-            <Button Classes="sidebar-button" Command="{Binding AIModelsCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <material:MaterialIcon Kind="Brain"/>
-                <TextBlock Text="AI Models" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
+					<!-- Models -->
+					<Button Classes="sidebar-button" Command="{Binding ModelsCommand}">
+						<Grid>
+							<StackPanel Orientation="Horizontal"
+                                      Spacing="12"
+                                      VerticalAlignment="Center">
+								<material:MaterialIcon Kind="Brain"/>
+								<TextBlock Text="Models"
+                                         IsVisible="{Binding IsSidebarExpanded}"
+                                         VerticalAlignment="Center"/>
+							</StackPanel>
+						</Grid>
+					</Button>
 
-            <Button Classes="sidebar-button" Command="{Binding AboutCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <material:MaterialIcon Kind="Information"/>
-                <TextBlock Text="About" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
-          </StackPanel>
+					<!-- Settings -->
+					<Button Classes="sidebar-button" Command="{Binding SettingsCommand}">
+						<Grid>
+							<StackPanel Orientation="Horizontal"
+                                      Spacing="12"
+                                      VerticalAlignment="Center">
+								<material:MaterialIcon Kind="Cog"/>
+								<TextBlock Text="Settings"
+                                         IsVisible="{Binding IsSidebarExpanded}"
+                                         VerticalAlignment="Center"/>
+							</StackPanel>
+						</Grid>
+					</Button>
+				</StackPanel>
+			</DockPanel>
+		</Border>
 
-          <!-- Menu Items Container - Collapsed -->
-          <StackPanel IsVisible="{Binding !IsSidebarExpanded}">
-            <Button Classes="sidebar-button collapsed" Command="{Binding HomeCommand}">
-              <material:MaterialIcon Kind="Home"/>
-            </Button>
-
-            <Button Classes="sidebar-button collapsed" Command="{Binding SettingsCommand}">
-              <material:MaterialIcon Kind="Cog"/>
-            </Button>
-
-            <Button Classes="sidebar-button collapsed" Command="{Binding VoiceCommand}">
-              <material:MaterialIcon Kind="Microphone"/>
-            </Button>
-
-            <Button Classes="sidebar-button collapsed" Command="{Binding AIModelsCommand}">
-              <material:MaterialIcon Kind="Brain"/>
-            </Button>
-
-            <Button Classes="sidebar-button collapsed" Command="{Binding AboutCommand}">
-              <material:MaterialIcon Kind="Information"/>
-            </Button>
-          </StackPanel>
-        </StackPanel>
-      </DockPanel>
-    </Border>
-
-    <!-- Main Content -->
-    <ContentControl Grid.Column="1" Content="{Binding CurrentPage}"/>
-  </Grid>
+		<!-- Main Content -->
+		<ContentControl Grid.Column="1"
+                       Content="{Binding CurrentPage}"/>
+	</Grid>
 </UserControl>

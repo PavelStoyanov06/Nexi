@@ -2,9 +2,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Nexi.UI.App"
              xmlns:material="using:Material.Icons.Avalonia"
+			 xmlns:converters="using:Nexi.UI.Converters"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
+	<Application.Resources>
+		<converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
+		<converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
+	</Application.Resources>
+	
     <Application.Styles>
         <FluentTheme />
         <material:MaterialIconStyles />

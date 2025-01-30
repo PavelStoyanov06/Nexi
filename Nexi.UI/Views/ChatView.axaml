@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+			 xmlns:vm="clr-namespace:Nexi.UI.ViewModels"
+			 xmlns:material="using:Material.Icons.Avalonia"
+             x:Class="Nexi.UI.ChatView"
+			 x:DataType="vm:ChatViewModel">
+	<Grid RowDefinitions="*,Auto">
+		<!-- Chat Messages Area -->
+		<ScrollViewer Grid.Row="0"
+                     Name="MessagesScroll"
+                     Padding="16"
+                     Background="{DynamicResource SystemChromeLowColor}">
+			<ItemsControl ItemsSource="{CompiledBinding Messages}">
+				<ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="vm:ChatMessage">
+						<Border Margin="0,8"
+                                Padding="16,12"
+                                CornerRadius="8"
+                                Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}}"
+                                HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}">
+							<StackPanel>
+								<TextBlock Text="{CompiledBinding Content}"
+                                         TextWrapping="Wrap"
+                                         Foreground="{DynamicResource TextControlForeground}"/>
+								<TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
+                                         FontSize="11"
+                                         Margin="0,4,0,0"
+                                         Opacity="0.6"/>
+							</StackPanel>
+						</Border>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+		</ScrollViewer>
+
+		<!-- Input Area -->
+		<Grid Grid.Row="1"
+              ColumnDefinitions="Auto,*,Auto,Auto"
+              Margin="16"
+              Background="{DynamicResource SystemChromeMediumColor}">
+
+			<!-- Voice Toggle -->
+			<ToggleButton Grid.Column="0"
+                         Classes="voice-toggle"
+                         IsChecked="{CompiledBinding IsVoiceModeEnabled}"
+                         ToolTip.Tip="Toggle Voice Input">
+				<material:MaterialIcon Kind="Microphone" />
+			</ToggleButton>
+
+			<!-- Text Input -->
+			<TextBox Grid.Column="1"
+                     Text="{CompiledBinding CurrentMessage}"
+                     Watermark="Type a message..."
+                     Margin="8,0"
+                     Height="40"
+                     VerticalContentAlignment="Center"/>
+
+			<!-- Clear Button (only visible when there's text) -->
+			<Button Grid.Column="2"
+                    Classes="clear-button"
+                    Command="{CompiledBinding ClearMessageCommand}"
+                    IsVisible="{CompiledBinding HasMessageText}">
+				<material:MaterialIcon Kind="Close"/>
+			</Button>
+
+			<!-- Send Button -->
+			<Button Grid.Column="3"
+                    Classes="send-button"
+                    Command="{CompiledBinding SendMessageCommand}"
+                    Margin="8,0,0,0">
+				<material:MaterialIcon Kind="Send"/>
+			</Button>
+		</Grid>
+	</Grid>
+
+	<UserControl.Styles>
+		<Style Selector="ToggleButton.voice-toggle">
+			<Setter Property="Width" Value="40"/>
+			<Setter Property="Height" Value="40"/>
+			<Setter Property="CornerRadius" Value="20"/>
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+
+		<Style Selector="ToggleButton.voice-toggle:checked">
+			<Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+		</Style>
+
+		<Style Selector="Button.clear-button">
+			<Setter Property="Width" Value="40"/>
+			<Setter Property="Height" Value="40"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Padding" Value="8"/>
+		</Style>
+
+		<Style Selector="Button.send-button">
+			<Setter Property="Width" Value="40"/>
+			<Setter Property="Height" Value="40"/>
+			<Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+			<Setter Property="Padding" Value="8"/>
+		</Style>
+
+		<Style Selector="material|MaterialIcon">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+		</Style>
+	</UserControl.Styles>
+</UserControl>

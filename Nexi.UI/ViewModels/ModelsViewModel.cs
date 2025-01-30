@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Nexi.UI.ViewModels
 {
-    public class AIModelsViewModel : ViewModelBase
+    public class ModelsViewModel : ViewModelBase
     {
     }
 }

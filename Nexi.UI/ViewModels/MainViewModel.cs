@@ -13,35 +13,23 @@ public class MainViewModel : ViewModelBase
     private const double EXPANDED_WIDTH = 250;
     private const double COLLAPSED_WIDTH = 60;
 
-    public HorizontalAlignment ButtonContentAlignment =>
-        IsSidebarExpanded ? HorizontalAlignment.Left : HorizontalAlignment.Center;
-
     public MainViewModel()
     {
+        // Initialize with ChatView
+        _currentPage = new ChatViewModel();
+
         UpdateSidebarWidth();
 
         // Initialize commands
         ToggleSidebarCommand = ReactiveCommand.Create(() =>
         {
             IsSidebarExpanded = !IsSidebarExpanded;
-            this.RaisePropertyChanged(nameof(ButtonContentAlignment));
         });
 
-        HomeCommand = ReactiveCommand.Create(NavigateToHome);
+        NewChatCommand = ReactiveCommand.Create(NavigateToNewChat);
+        ChatHistoryCommand = ReactiveCommand.Create(NavigateToChatHistory);
+        ModelsCommand = ReactiveCommand.Create(NavigateToModels);
         SettingsCommand = ReactiveCommand.Create(NavigateToSettings);
-        VoiceCommand = ReactiveCommand.Create(NavigateToVoice);
-        AIModelsCommand = ReactiveCommand.Create(NavigateToAIModels);
-        AboutCommand = ReactiveCommand.Create(NavigateToAbout);
-
-        // Set initial page
-        NavigateToHome();
-    }
-
-    public Thickness IconMargin => IsSidebarExpanded ? new Thickness(0) : new Thickness(8, 0, 0, 0);
-
-    private void UpdateIconMargin()
-    {
-        this.RaisePropertyChanged(nameof(IconMargin));
     }
 
     public bool IsSidebarExpanded
@@ -71,37 +59,31 @@ public class MainViewModel : ViewModelBase
         SidebarWidth = IsSidebarExpanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
     }
 
-    // Commands
+    // Navigation Commands
     public ICommand ToggleSidebarCommand { get; }
-    public ICommand HomeCommand { get; }
+    public ICommand NewChatCommand { get; }
+    public ICommand ChatHistoryCommand { get; }
+    public ICommand ModelsCommand { get; }
     public ICommand SettingsCommand { get; }
-    public ICommand VoiceCommand { get; }
-    public ICommand AIModelsCommand { get; }
-    public ICommand AboutCommand { get; }
 
     // Navigation Methods
-    private void NavigateToHome()
+    private void NavigateToNewChat()
     {
-        CurrentPage = new HomeViewModel();
+        CurrentPage = new ChatViewModel();
+    }
+
+    private void NavigateToChatHistory()
+    {
+        CurrentPage = new ChatHistoryViewModel();
+    }
+
+    private void NavigateToModels()
+    {
+        CurrentPage = new ModelsViewModel();
     }
 
     private void NavigateToSettings()
     {
         CurrentPage = new SettingsViewModel();
-    }
-
-    private void NavigateToVoice()
-    {
-        CurrentPage = new VoiceCommandsViewModel();
-    }
-
-    private void NavigateToAIModels()
-    {
-        CurrentPage = new AIModelsViewModel();
-    }
-
-    private void NavigateToAbout()
-    {
-        CurrentPage = new AboutViewModel();
     }
 }
