@@ -17,20 +17,28 @@
     <!-- Chat Messages Area -->
     <ScrollViewer Grid.Row="0"
                  Name="MessagesScroll"
-                 Padding="16"
-                 Background="{DynamicResource SystemChromeLowColor}">
-      <ItemsControl ItemsSource="{CompiledBinding Messages}">
+                 Background="{DynamicResource SystemChromeMediumColor}">
+      <ItemsControl ItemsSource="{CompiledBinding Messages}"
+                   Margin="16,8">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:ChatMessage">
             <Border Margin="0,8"
                     Padding="16,12"
-                    CornerRadius="8"
+                    CornerRadius="12"
                     Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}}"
-                    HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}">
+                    HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
+                    MaxWidth="600"
+                    BoxShadow="0 2 4 0 #20000000">
+              <Border.Transitions>
+                <Transitions>
+                  <BrushTransition Property="Background" Duration="0:0:0.2"/>
+                </Transitions>
+              </Border.Transitions>
               <StackPanel>
                 <TextBlock Text="{CompiledBinding Content}"
                          TextWrapping="Wrap"
-                         Foreground="{DynamicResource TextControlForeground}"/>
+                         FontSize="14"
+                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
                 <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
                          FontSize="11"
                          Margin="0,4,0,0"
@@ -43,43 +51,46 @@
     </ScrollViewer>
 
     <!-- Input Area -->
-    <Grid Grid.Row="1"
-          ColumnDefinitions="Auto,*,Auto,Auto"
-          Margin="16"
-          Background="{DynamicResource SystemChromeMediumColor}">
+    <Border Grid.Row="1"
+            BorderBrush="{DynamicResource SystemAccentColor}"
+            BorderThickness="0,1,0,0"
+            Background="{DynamicResource SystemChromeMediumColor}">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+            Margin="16">
+        <!-- Voice Toggle -->
+        <ToggleButton Grid.Column="0"
+                     Classes="voice-toggle"
+                     IsChecked="{CompiledBinding IsVoiceModeEnabled}"
+                     ToolTip.Tip="Toggle Voice Input">
+          <material:MaterialIcon Kind="Microphone" />
+        </ToggleButton>
 
-      <!-- Voice Toggle -->
-      <ToggleButton Grid.Column="0"
-                   Classes="voice-toggle"
-                   IsChecked="{CompiledBinding IsVoiceModeEnabled}"
-                   ToolTip.Tip="Toggle Voice Input">
-        <material:MaterialIcon Kind="Microphone" />
-      </ToggleButton>
+        <!-- Text Input -->
+        <TextBox Grid.Column="1"
+                 Text="{CompiledBinding CurrentMessage}"
+                 Watermark="Type a message..."
+                 Margin="8,0"
+                 Height="40"
+                 VerticalContentAlignment="Center"
+                 CornerRadius="20"/>
 
-      <!-- Text Input -->
-      <TextBox Grid.Column="1"
-               Text="{CompiledBinding CurrentMessage}"
-               Watermark="Type a message..."
-               Margin="8,0"
-               Height="40"
-               VerticalContentAlignment="Center"/>
+        <!-- Clear Button (only visible when there's text) -->
+        <Button Grid.Column="2"
+                Classes="clear-button"
+                Command="{CompiledBinding ClearMessageCommand}"
+                IsVisible="{CompiledBinding HasMessageText}">
+          <material:MaterialIcon Kind="Close"/>
+        </Button>
 
-      <!-- Clear Button (only visible when there's text) -->
-      <Button Grid.Column="2"
-              Classes="clear-button"
-              Command="{CompiledBinding ClearMessageCommand}"
-              IsVisible="{CompiledBinding HasMessageText}">
-        <material:MaterialIcon Kind="Close"/>
-      </Button>
-
-      <!-- Send Button -->
-      <Button Grid.Column="3"
-              Classes="send-button"
-              Command="{CompiledBinding SendMessageCommand}"
-              Margin="8,0,0,0">
-        <material:MaterialIcon Kind="Send"/>
-      </Button>
-    </Grid>
+        <!-- Send Button -->
+        <Button Grid.Column="3"
+                Classes="send-button"
+                Command="{CompiledBinding SendMessageCommand}"
+                Margin="8,0,0,0">
+          <material:MaterialIcon Kind="Send"/>
+        </Button>
+      </Grid>
+    </Border>
   </Grid>
 
   <UserControl.Styles>
@@ -88,10 +99,13 @@
       <Setter Property="Height" Value="40"/>
       <Setter Property="CornerRadius" Value="20"/>
       <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="BorderThickness" Value="1"/>
     </Style>
 
     <Style Selector="ToggleButton.voice-toggle:checked">
       <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
     </Style>
 
     <Style Selector="Button.clear-button">
@@ -99,6 +113,7 @@
       <Setter Property="Height" Value="40"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Padding" Value="8"/>
+      <Setter Property="CornerRadius" Value="20"/>
     </Style>
 
     <Style Selector="Button.send-button">
@@ -106,12 +121,29 @@
       <Setter Property="Height" Value="40"/>
       <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
       <Setter Property="Padding" Value="8"/>
+      <Setter Property="CornerRadius" Value="20"/>
+    </Style>
+
+    <Style Selector="Button.send-button:pointerover">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
     </Style>
 
     <Style Selector="material|MaterialIcon">
       <Setter Property="Width" Value="20"/>
       <Setter Property="Height" Value="20"/>
       <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+    </Style>
+
+    <Style Selector="ToggleButton.voice-toggle material|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+    </Style>
+
+    <Style Selector="ToggleButton.voice-toggle:checked material|MaterialIcon">
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+
+    <Style Selector="Button.send-button material|MaterialIcon">
+      <Setter Property="Foreground" Value="White"/>
     </Style>
   </UserControl.Styles>
 </UserControl>

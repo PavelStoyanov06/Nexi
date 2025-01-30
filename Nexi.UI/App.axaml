@@ -6,13 +6,19 @@
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
-	<Application.Resources>
-		<converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
-		<converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
-	</Application.Resources>
-	
-    <Application.Styles>
-        <FluentTheme />
-        <material:MaterialIconStyles />
+  <Application.Resources>
+    <converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
+    <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
+    <converters:BoolToForegroundConverter x:Key="BoolToForegroundConverter"/>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#A880E4"/>
+        <ColorPaletteResources x:Key="Dark" Accent="#A880E4"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <material:MaterialIconStyles />
     </Application.Styles>
 </Application>
