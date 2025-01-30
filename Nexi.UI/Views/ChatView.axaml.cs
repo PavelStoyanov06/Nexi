@@ -1,13 +1,13 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
-namespace Nexi.UI;
-
-public partial class ChatView : UserControl
+namespace Nexi.UI.Views
 {
-    public ChatView()
+    public partial class ChatView : UserControl
     {
-        InitializeComponent();
+        public ChatView()
+        {
+            AvaloniaXamlLoader.Load(this);
+        }
     }
 }

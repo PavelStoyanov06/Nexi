@@ -3,7 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:material="using:Material.Icons.Avalonia"
-             xmlns:vm="clr-namespace:Nexi.UI.ViewModels"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:views="using:Nexi.UI.Views"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Nexi.UI.Views.MainView"
              x:DataType="vm:MainViewModel">
@@ -11,151 +12,153 @@
     <vm:MainViewModel />
   </Design.DataContext>
 
-	<UserControl.Styles>
-		<!-- Button styles -->
-		<Style Selector="Button.sidebar-button">
-			<Setter Property="Height" Value="40"/>
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="CornerRadius" Value="4"/>
-			<Setter Property="Margin" Value="4,2"/>
-			<Setter Property="HorizontalAlignment" Value="Stretch"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
-			<Setter Property="HorizontalContentAlignment" Value="Left"/>
-			<Setter Property="Padding" Value="12,0"/>
-		</Style>
+  <Grid ColumnDefinitions="Auto,*">
+    <!-- Sidebar -->
+    <Border Grid.Column="0"
+            Classes="sidebar"
+            Width="{CompiledBinding SidebarWidth}"
+            Background="{DynamicResource SystemChromeMediumLowColor}">
+      <DockPanel>
+        <!-- Header with Title and Toggle Button -->
+        <Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
 
-		<!-- Centered button style for collapsed state -->
-		<Style Selector="Button.sidebar-button.collapsed">
-			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="Padding" Value="0"/>
-		</Style>
+          <TextBlock Text="NEXI"
+                   Classes="title"
+                   Grid.Column="0"
+                   IsVisible="{CompiledBinding IsSidebarExpanded}"/>
 
-		<Style Selector="Button.sidebar-button:pointerover">
-			<Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
-			<Setter Property="Opacity" Value="0.6"/>
-		</Style>
+          <Button Grid.Column="1"
+                  Command="{CompiledBinding ToggleSidebarCommand}"
+                  Classes="sidebar-button"
+                  Width="40">
+            <material:MaterialIcon Kind="Menu"/>
+          </Button>
+        </Grid>
 
-		<!-- Title text -->
-		<Style Selector="TextBlock.title">
-			<Setter Property="FontFamily" Value="Cascadia Code"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
-			<Setter Property="Margin" Value="12,0,0,0"/>
-		</Style>
+        <!-- Menu Items -->
+        <StackPanel Margin="4,8,4,4">
+          <!-- New Chat -->
+          <Button Classes="sidebar-button" Command="{CompiledBinding NewChatCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Plus"/>
+                <TextBlock Text="New Chat"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
 
-		<!-- Icon styling -->
-		<Style Selector="material|MaterialIcon">
-			<Setter Property="Width" Value="20"/>
-			<Setter Property="Height" Value="20"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
-		</Style>
+          <!-- Chat History -->
+          <Button Classes="sidebar-button" Command="{CompiledBinding ChatHistoryCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="History"/>
+                <TextBlock Text="Chat History"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
 
-		<!-- Text styling -->
-		<Style Selector="TextBlock">
-			<Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
-		</Style>
+          <!-- Models -->
+          <Button Classes="sidebar-button" Command="{CompiledBinding ModelsCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Brain"/>
+                <TextBlock Text="Models"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
 
-		<!-- Sidebar transitions -->
-		<Style Selector="Border.sidebar">
-			<Setter Property="Transitions">
-				<Transitions>
-					<DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut"/>
-				</Transitions>
-			</Setter>
-		</Style>
-	</UserControl.Styles>
+          <!-- Settings -->
+          <Button Classes="sidebar-button" Command="{CompiledBinding SettingsCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Cog"/>
+                <TextBlock Text="Settings"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
 
-	<Grid ColumnDefinitions="Auto,*">
-		<!-- Sidebar -->
-		<Border Grid.Column="0"
-                Classes="sidebar"
-                Width="{Binding SidebarWidth}"
-                Background="{DynamicResource SystemChromeMediumLowColor}">
-			<DockPanel>
-				<!-- Header with Title and Toggle Button -->
-				<Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
-					<Grid.ColumnDefinitions>
-						<ColumnDefinition Width="*"/>
-						<ColumnDefinition Width="Auto"/>
-					</Grid.ColumnDefinitions>
+    <!-- Main Content Area -->
+    <ContentControl Grid.Column="1"
+                   Content="{CompiledBinding CurrentPage}">
+      <ContentControl.DataTemplates>
+        <DataTemplate x:DataType="vm:ChatViewModel">
+          <views:ChatView x:DataType="vm:ChatViewModel" />
+        </DataTemplate>
+        <!-- Add other view templates as needed -->
+      </ContentControl.DataTemplates>
+    </ContentControl>
+  </Grid>
 
-					<TextBlock Text="NEXI"
-                             Classes="title"
-                             Grid.Column="0"
-                             IsVisible="{Binding IsSidebarExpanded}"/>
+  <UserControl.Styles>
+    <!-- Button styles -->
+    <Style Selector="Button.sidebar-button">
+      <Setter Property="Height" Value="40"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Margin" Value="4,2"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="12,0"/>
+    </Style>
 
-					<Button Grid.Column="1"
-                            Command="{Binding ToggleSidebarCommand}"
-                            Classes="sidebar-button"
-                            Width="40">
-						<material:MaterialIcon Kind="Menu"/>
-					</Button>
-				</Grid>
+    <!-- Centered button style for collapsed state -->
+    <Style Selector="Button.sidebar-button.collapsed">
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
 
-				<!-- Menu Items -->
-				<StackPanel Margin="4,8,4,4">
-					<!-- New Chat -->
-					<Button Classes="sidebar-button" Command="{Binding NewChatCommand}">
-						<Grid>
-							<StackPanel Orientation="Horizontal"
-                                      Spacing="12"
-                                      VerticalAlignment="Center">
-								<material:MaterialIcon Kind="Plus"/>
-								<TextBlock Text="New Chat"
-                                         IsVisible="{Binding IsSidebarExpanded}"
-                                         VerticalAlignment="Center"/>
-							</StackPanel>
-						</Grid>
-					</Button>
+    <Style Selector="Button.sidebar-button:pointerover">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
+      <Setter Property="Opacity" Value="0.6"/>
+    </Style>
 
-					<!-- Chat History -->
-					<Button Classes="sidebar-button" Command="{Binding ChatHistoryCommand}">
-						<Grid>
-							<StackPanel Orientation="Horizontal"
-                                      Spacing="12"
-                                      VerticalAlignment="Center">
-								<material:MaterialIcon Kind="History"/>
-								<TextBlock Text="Chat History"
-                                         IsVisible="{Binding IsSidebarExpanded}"
-                                         VerticalAlignment="Center"/>
-							</StackPanel>
-						</Grid>
-					</Button>
+    <!-- Title text -->
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontFamily" Value="Cascadia Code"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Margin" Value="12,0,0,0"/>
+    </Style>
 
-					<!-- Models -->
-					<Button Classes="sidebar-button" Command="{Binding ModelsCommand}">
-						<Grid>
-							<StackPanel Orientation="Horizontal"
-                                      Spacing="12"
-                                      VerticalAlignment="Center">
-								<material:MaterialIcon Kind="Brain"/>
-								<TextBlock Text="Models"
-                                         IsVisible="{Binding IsSidebarExpanded}"
-                                         VerticalAlignment="Center"/>
-							</StackPanel>
-						</Grid>
-					</Button>
+    <!-- Icon styling -->
+    <Style Selector="material|MaterialIcon">
+      <Setter Property="Width" Value="20"/>
+      <Setter Property="Height" Value="20"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+    </Style>
 
-					<!-- Settings -->
-					<Button Classes="sidebar-button" Command="{Binding SettingsCommand}">
-						<Grid>
-							<StackPanel Orientation="Horizontal"
-                                      Spacing="12"
-                                      VerticalAlignment="Center">
-								<material:MaterialIcon Kind="Cog"/>
-								<TextBlock Text="Settings"
-                                         IsVisible="{Binding IsSidebarExpanded}"
-                                         VerticalAlignment="Center"/>
-							</StackPanel>
-						</Grid>
-					</Button>
-				</StackPanel>
-			</DockPanel>
-		</Border>
-
-		<!-- Main Content -->
-		<ContentControl Grid.Column="1"
-                       Content="{Binding CurrentPage}"/>
-	</Grid>
+    <!-- Sidebar transitions -->
+    <Style Selector="Border.sidebar">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+        </Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
 </UserControl>
