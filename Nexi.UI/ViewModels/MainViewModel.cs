@@ -1,89 +1,88 @@
-﻿using Avalonia;
-using Avalonia.Layout;
-using ReactiveUI;
+﻿using ReactiveUI;
 using System.Windows.Input;
 
-namespace Nexi.UI.ViewModels;
-
-public class MainViewModel : ViewModelBase
+namespace Nexi.UI.ViewModels
 {
-    private bool _isSidebarExpanded = true;
-    private double _sidebarWidth;
-    private ViewModelBase _currentPage;
-    private const double EXPANDED_WIDTH = 250;
-    private const double COLLAPSED_WIDTH = 60;
-
-    public MainViewModel()
+    public class MainViewModel : ViewModelBase
     {
-        // Initialize with ChatView
-        _currentPage = new ChatViewModel();
+        private bool _isSidebarExpanded = true;
+        private double _sidebarWidth;
+        private ViewModelBase _currentPage;
+        private const double EXPANDED_WIDTH = 250;
+        private const double COLLAPSED_WIDTH = 60;
 
-        UpdateSidebarWidth();
-
-        // Initialize commands
-        ToggleSidebarCommand = ReactiveCommand.Create(() =>
+        public MainViewModel()
         {
-            IsSidebarExpanded = !IsSidebarExpanded;
-        });
+            // Initialize with ChatView
+            _currentPage = new ChatViewModel();
 
-        NewChatCommand = ReactiveCommand.Create(NavigateToNewChat);
-        ChatHistoryCommand = ReactiveCommand.Create(NavigateToChatHistory);
-        ModelsCommand = ReactiveCommand.Create(NavigateToModels);
-        SettingsCommand = ReactiveCommand.Create(NavigateToSettings);
-    }
-
-    public bool IsSidebarExpanded
-    {
-        get => _isSidebarExpanded;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _isSidebarExpanded, value);
             UpdateSidebarWidth();
+
+            // Initialize commands
+            ToggleSidebarCommand = ReactiveCommand.Create(() =>
+            {
+                IsSidebarExpanded = !IsSidebarExpanded;
+            });
+
+            NewChatCommand = ReactiveCommand.Create(NavigateToNewChat);
+            ChatHistoryCommand = ReactiveCommand.Create(NavigateToChatHistory);
+            ModelsCommand = ReactiveCommand.Create(NavigateToModels);
+            SettingsCommand = ReactiveCommand.Create(NavigateToSettings);
         }
-    }
 
-    public double SidebarWidth
-    {
-        get => _sidebarWidth;
-        private set => this.RaiseAndSetIfChanged(ref _sidebarWidth, value);
-    }
+        public bool IsSidebarExpanded
+        {
+            get => _isSidebarExpanded;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isSidebarExpanded, value);
+                UpdateSidebarWidth();
+            }
+        }
 
-    public ViewModelBase CurrentPage
-    {
-        get => _currentPage;
-        private set => this.RaiseAndSetIfChanged(ref _currentPage, value);
-    }
+        public double SidebarWidth
+        {
+            get => _sidebarWidth;
+            private set => this.RaiseAndSetIfChanged(ref _sidebarWidth, value);
+        }
 
-    private void UpdateSidebarWidth()
-    {
-        SidebarWidth = IsSidebarExpanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
-    }
+        public ViewModelBase CurrentPage
+        {
+            get => _currentPage;
+            private set => this.RaiseAndSetIfChanged(ref _currentPage, value);
+        }
 
-    // Navigation Commands
-    public ICommand ToggleSidebarCommand { get; }
-    public ICommand NewChatCommand { get; }
-    public ICommand ChatHistoryCommand { get; }
-    public ICommand ModelsCommand { get; }
-    public ICommand SettingsCommand { get; }
+        private void UpdateSidebarWidth()
+        {
+            SidebarWidth = IsSidebarExpanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
+        }
 
-    // Navigation Methods
-    private void NavigateToNewChat()
-    {
-        CurrentPage = new ChatViewModel();
-    }
+        // Navigation Commands
+        public ICommand ToggleSidebarCommand { get; }
+        public ICommand NewChatCommand { get; }
+        public ICommand ChatHistoryCommand { get; }
+        public ICommand ModelsCommand { get; }
+        public ICommand SettingsCommand { get; }
 
-    private void NavigateToChatHistory()
-    {
-        CurrentPage = new ChatHistoryViewModel();
-    }
+        // Navigation Methods
+        private void NavigateToNewChat()
+        {
+            CurrentPage = new ChatViewModel();
+        }
 
-    private void NavigateToModels()
-    {
-        CurrentPage = new ModelsViewModel();
-    }
+        private void NavigateToChatHistory()
+        {
+            CurrentPage = new ChatHistoryViewModel();
+        }
 
-    private void NavigateToSettings()
-    {
-        CurrentPage = new SettingsViewModel();
+        private void NavigateToModels()
+        {
+            CurrentPage = new ModelsViewModel();
+        }
+
+        private void NavigateToSettings()
+        {
+            CurrentPage = new SettingsViewModel();
+        }
     }
 }

@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:material="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Nexi.UI.Views.ChatHistoryView"
+             x:CompileBindings="True"
+             x:DataType="vm:ChatHistoryViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Search Bar -->
+    <Grid Grid.Row="0"
+          Margin="20"
+          ColumnDefinitions="*,Auto">
+      <TextBox Grid.Column="0"
+               Text="{CompiledBinding SearchQuery}"
+               Watermark="Search conversations..."
+               Height="40"
+               CornerRadius="20"
+               Margin="0,0,10,0">
+        <TextBox.InnerLeftContent>
+          <material:MaterialIcon Kind="Search"
+                               Width="20"
+                               Height="20"
+                               Margin="12,0,0,0"/>
+        </TextBox.InnerLeftContent>
+      </TextBox>
+
+      <Button Grid.Column="1"
+              Classes="accent-button"
+              Command="{CompiledBinding ClearSearchCommand}"
+              IsVisible="{CompiledBinding !!SearchQuery}">
+        <material:MaterialIcon Kind="Close"/>
+      </Button>
+    </Grid>
+
+    <!-- Chat List -->
+    <ScrollViewer Grid.Row="1">
+      <ItemsControl ItemsSource="{CompiledBinding FilteredChats}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="2"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ChatHistoryItem">
+            <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).OpenChatCommand}"
+                    CommandParameter="{CompiledBinding Id}"
+                    Classes="chat-item"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch">
+              <Grid ColumnDefinitions="Auto,*,Auto"
+                    Margin="20,12">
+                <!-- Icon -->
+                <Border Grid.Column="0"
+                        Width="40"
+                        Height="40"
+                        CornerRadius="20"
+                        Background="{DynamicResource SystemAccentColor}">
+                  <material:MaterialIcon Kind="Message"
+                                       Width="20"
+                                       Height="20"
+                                       Foreground="White"/>
+                </Border>
+
+                <!-- Chat Info -->
+                <StackPanel Grid.Column="1"
+                          Margin="12,0,0,0"
+                          VerticalAlignment="Center">
+                  <TextBlock Text="{CompiledBinding Title}"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{CompiledBinding LastMessage}"
+                           Opacity="0.6"
+                           TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <!-- Timestamp -->
+                <StackPanel Grid.Column="2"
+                          Margin="12,0,0,0"
+                          HorizontalAlignment="Right">
+                  <TextBlock Text="{CompiledBinding LastMessageTime, StringFormat=\{0:t\}}"
+                           Opacity="0.6"/>
+                  <TextBlock Text="{CompiledBinding LastMessageDate, StringFormat=\{0:d\}}"
+                           Opacity="0.6"
+                           FontSize="11"/>
+                </StackPanel>
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+
+  <UserControl.Styles>
+    <Style Selector="Button.chat-item">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <Style Selector="Button.chat-item:pointerover">
+      <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+    </Style>
+
+    <Style Selector="Button.accent-button">
+      <Setter Property="Width" Value="40"/>
+      <Setter Property="Height" Value="40"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="Button.accent-button:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+    </Style>
+  </UserControl.Styles>
+</UserControl>
