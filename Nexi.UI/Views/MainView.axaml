@@ -108,6 +108,9 @@
         <DataTemplate DataType="{x:Type vm:ChatHistoryViewModel}">
           <views:ChatHistoryView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ModelsViewModel}">
+          <views:ModelsView />
+        </DataTemplate>
       </TransitioningContentControl.DataTemplates>
     </TransitioningContentControl>
   </Grid>

@@ -1,0 +1,141 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:material="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Nexi.UI.Views.ModelsView"
+             x:CompileBindings="True"
+             x:DataType="vm:ModelsViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <Border Grid.Row="0"
+            Padding="20"
+            Background="{DynamicResource SystemChromeMediumColor}">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="AI Models"
+                   FontSize="24"
+                   FontWeight="SemiBold"/>
+          <TextBlock Text="Manage your local and cloud AI models"
+                   Opacity="0.7"/>
+        </StackPanel>
+
+        <Button Grid.Column="1"
+                Classes="accent-button"
+                Command="{CompiledBinding RefreshModelsCommand}">
+          <material:MaterialIcon Kind="Refresh"/>
+        </Button>
+      </Grid>
+    </Border>
+
+    <!-- Models List -->
+    <ScrollViewer Grid.Row="1">
+      <ItemsControl ItemsSource="{CompiledBinding AvailableModels}"
+                   Margin="20">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="12"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:AIModel">
+            <Border Background="{DynamicResource SystemChromeMediumColor}"
+                    CornerRadius="8"
+                    Padding="16"
+                    BoxShadow="0 2 8 0 #30000000">
+              <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                <!-- Model Name and Info -->
+                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                  <TextBlock Text="{CompiledBinding Name}"
+                           FontWeight="SemiBold"
+                           FontSize="16"/>
+                  <TextBlock Text="{CompiledBinding Description}"
+                           Opacity="0.7"
+                           TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- Status Badge -->
+                <Border Grid.Row="0"
+                        Grid.Column="1"
+                        Background="{CompiledBinding Status, Converter={StaticResource ModelStatusToBrushConverter}}"
+                        CornerRadius="12"
+                        Padding="8,4">
+                  <TextBlock Text="{CompiledBinding Status}"
+                           FontSize="12"
+                           Foreground="White"/>
+                </Border>
+
+                <!-- Model Details -->
+                <StackPanel Grid.Row="1"
+                          Grid.Column="0"
+                          Grid.ColumnSpan="2"
+                          Orientation="Horizontal"
+                          Spacing="16"
+                          Margin="0,12,0,0">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <material:MaterialIcon Kind="Database"/>
+                    <TextBlock Text="{CompiledBinding Size}"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <material:MaterialIcon Kind="Tag"/>
+                    <TextBlock Text="{CompiledBinding Version}"/>
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Action Buttons -->
+                <StackPanel Grid.Row="1"
+                          Grid.Column="1"
+                          Orientation="Horizontal"
+                          HorizontalAlignment="Right"
+                          Spacing="8"
+                          Margin="0,12,0,0">
+                  <Button Classes="accent-button"
+                          Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DownloadModelCommand}"
+                          CommandParameter="{CompiledBinding Id}"
+                          IsVisible="{CompiledBinding CanDownload}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <material:MaterialIcon Kind="Download"/>
+                      <TextBlock Text="Download"/>
+                    </StackPanel>
+                  </Button>
+                  <Button Classes="accent-button"
+                          Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DeleteModelCommand}"
+                          CommandParameter="{CompiledBinding Id}"
+                          IsVisible="{CompiledBinding CanDelete}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <material:MaterialIcon Kind="Delete"/>
+                      <TextBlock Text="Remove"/>
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+
+  <UserControl.Styles>
+    <Style Selector="Button.accent-button">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="Button.accent-button:pointerover">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
+      <Setter Property="RenderTransform" Value="scale(1.05)"/>
+    </Style>
+  </UserControl.Styles>
+</UserControl>

@@ -10,6 +10,7 @@
     <converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
     <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
     <converters:BoolToForegroundConverter x:Key="BoolToForegroundConverter"/>
+    <converters:ModelStatusToBrushConverter x:Key="ModelStatusToBrushConverter"/>
   </Application.Resources>
 
   <Application.Styles>
