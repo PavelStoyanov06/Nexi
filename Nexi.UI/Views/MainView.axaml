@@ -9,12 +9,6 @@
              x:Class="Nexi.UI.Views.MainView"
              x:CompileBindings="True"
              x:DataType="vm:MainViewModel">
-<<<<<<< HEAD
-  <Design.DataContext>
-    <vm:MainViewModel />
-  </Design.DataContext>
-</UserControl>
-=======
 
   <Grid ColumnDefinitions="Auto,*">
     <!-- Sidebar -->
@@ -170,4 +164,3 @@
     </Style>
   </UserControl.Styles>
 </UserControl>
->>>>>>> frontend

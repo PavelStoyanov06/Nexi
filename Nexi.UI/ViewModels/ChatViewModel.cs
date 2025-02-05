@@ -1,9 +1,7 @@
-﻿using ReactiveUI;
+﻿// Nexi.UI/ViewModels/ChatViewModel.cs
+using ReactiveUI;
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
@@ -23,7 +21,7 @@ namespace Nexi.UI.ViewModels
             SendMessageCommand = ReactiveCommand.Create(SendMessage);
             ClearMessageCommand = ReactiveCommand.Create(ClearMessage);
 
-            // Example message for testing
+            // Add welcome message
             Messages.Add(new ChatMessage
             {
                 Content = "Hello! How can I help you today?",
@@ -63,6 +61,7 @@ namespace Nexi.UI.ViewModels
         {
             if (string.IsNullOrWhiteSpace(CurrentMessage)) return;
 
+            // Add user's message
             Messages.Add(new ChatMessage
             {
                 Content = CurrentMessage,
@@ -70,31 +69,24 @@ namespace Nexi.UI.ViewModels
                 IsUser = true
             });
 
+            // Store the message before clearing input
+            string userMessage = CurrentMessage;
+
             // Clear the input
             CurrentMessage = string.Empty;
 
-            // TODO: Process the message and get AI response
-            // This is where you'd integrate with your AI processing
-            SimulateResponse();
+            // Simple echo response
+            Messages.Add(new ChatMessage
+            {
+                Content = $"You said: {userMessage}",
+                Timestamp = DateTime.Now,
+                IsUser = false
+            });
         }
 
         private void ClearMessage()
         {
             CurrentMessage = string.Empty;
-        }
-
-        // Temporary method to simulate AI response
-        private async void SimulateResponse()
-        {
-            // Simulate typing delay
-            await Task.Delay(1000);
-
-            Messages.Add(new ChatMessage
-            {
-                Content = "I'm an AI assistant. This is a placeholder response.",
-                Timestamp = DateTime.Now,
-                IsUser = false
-            });
         }
     }
 
