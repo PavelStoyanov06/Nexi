@@ -1,20 +1,22 @@
-﻿// Nexi.UI/ViewModels/ChatViewModel.cs
-using ReactiveUI;
+﻿using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
-using System.Threading.Tasks;
 using System.Windows.Input;
+using Nexi.Services.Interfaces;
+using Nexi.UI.Models;
 
 namespace Nexi.UI.ViewModels
 {
     public class ChatViewModel : ViewModelBase
     {
+        private readonly ICommandProcessor _commandProcessor;
         private string _currentMessage = string.Empty;
         private bool _isVoiceModeEnabled;
         private ObservableCollection<ChatMessage> _messages;
 
-        public ChatViewModel()
+        public ChatViewModel(ICommandProcessor commandProcessor)
         {
+            _commandProcessor = commandProcessor;
             Messages = new ObservableCollection<ChatMessage>();
 
             // Initialize commands
@@ -24,7 +26,7 @@ namespace Nexi.UI.ViewModels
             // Add welcome message
             Messages.Add(new ChatMessage
             {
-                Content = "Hello! How can I help you today?",
+                Content = "Hello! I'm Nexi. You can type 'help' to see available commands.",
                 Timestamp = DateTime.Now,
                 IsUser = false
             });
@@ -69,16 +71,25 @@ namespace Nexi.UI.ViewModels
                 IsUser = true
             });
 
-            // Store the message before clearing input
+            // Store message and clear input
             string userMessage = CurrentMessage;
-
-            // Clear the input
             CurrentMessage = string.Empty;
 
-            // Simple echo response
+            // Process message
+            string response;
+            if (_commandProcessor.IsCommand(userMessage))
+            {
+                response = _commandProcessor.ProcessCommand(userMessage);
+            }
+            else
+            {
+                response = "That's not a command I recognize. Type 'help' to see available commands.";
+            }
+
+            // Add response
             Messages.Add(new ChatMessage
             {
-                Content = $"You said: {userMessage}",
+                Content = response,
                 Timestamp = DateTime.Now,
                 IsUser = false
             });
@@ -88,12 +99,5 @@ namespace Nexi.UI.ViewModels
         {
             CurrentMessage = string.Empty;
         }
-    }
-
-    public class ChatMessage
-    {
-        public required string Content { get; set; }
-        public DateTime Timestamp { get; set; }
-        public bool IsUser { get; set; }
     }
 }

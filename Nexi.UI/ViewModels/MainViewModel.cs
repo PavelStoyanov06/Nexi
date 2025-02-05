@@ -1,5 +1,6 @@
 ﻿using ReactiveUI;
 using System.Windows.Input;
+using Nexi.Services.Interfaces;
 
 namespace Nexi.UI.ViewModels
 {
@@ -10,11 +11,14 @@ namespace Nexi.UI.ViewModels
         private ViewModelBase _currentPage;
         private const double EXPANDED_WIDTH = 250;
         private const double COLLAPSED_WIDTH = 60;
+        private readonly ICommandProcessor _commandProcessor;
 
-        public MainViewModel()
+        public MainViewModel(ICommandProcessor commandProcessor)
         {
+            _commandProcessor = commandProcessor;
+
             // Initialize with ChatView
-            _currentPage = new ChatViewModel();
+            _currentPage = new ChatViewModel(_commandProcessor);
 
             UpdateSidebarWidth();
 
@@ -57,17 +61,15 @@ namespace Nexi.UI.ViewModels
             SidebarWidth = IsSidebarExpanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
         }
 
-        // Navigation Commands
         public ICommand ToggleSidebarCommand { get; }
         public ICommand NewChatCommand { get; }
         public ICommand ChatHistoryCommand { get; }
         public ICommand ModelsCommand { get; }
         public ICommand SettingsCommand { get; }
 
-        // Navigation Methods
         private void NavigateToNewChat()
         {
-            CurrentPage = new ChatViewModel();
+            CurrentPage = new ChatViewModel(_commandProcessor);
         }
 
         private void NavigateToChatHistory()
