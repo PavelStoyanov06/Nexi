@@ -2,11 +2,172 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="clr-namespace:Nexi.UI.ViewModels"
+             xmlns:material="using:Material.Icons.Avalonia"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:views="using:Nexi.UI.Views"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Nexi.UI.Views.MainView"
+             x:CompileBindings="True"
              x:DataType="vm:MainViewModel">
+<<<<<<< HEAD
   <Design.DataContext>
     <vm:MainViewModel />
   </Design.DataContext>
 </UserControl>
+=======
+
+  <Grid ColumnDefinitions="Auto,*">
+    <!-- Sidebar -->
+    <Border Grid.Column="0"
+            Classes="sidebar"
+            Width="{CompiledBinding SidebarWidth}"
+            Background="{DynamicResource SystemChromeMediumLowColor}">
+      <DockPanel>
+        <!-- Header -->
+        <Grid DockPanel.Dock="Top" Height="48" Margin="4,4,4,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+
+          <TextBlock Text="NEXI"
+                   Classes="title"
+                   Grid.Column="0"
+                   IsVisible="{CompiledBinding IsSidebarExpanded}"/>
+
+          <Button Grid.Column="1"
+                  Command="{CompiledBinding ToggleSidebarCommand}"
+                  Classes="sidebar-button"
+                  Width="40">
+            <material:MaterialIcon Kind="Menu"/>
+          </Button>
+        </Grid>
+
+        <!-- Menu Items -->
+        <StackPanel Margin="4,8,4,4">
+          <Button Classes="sidebar-button" Command="{CompiledBinding NewChatCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Plus"/>
+                <TextBlock Text="New Chat"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+
+          <Button Classes="sidebar-button" Command="{CompiledBinding ChatHistoryCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="History"/>
+                <TextBlock Text="Chat History"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+
+          <Button Classes="sidebar-button" Command="{CompiledBinding ModelsCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Brain"/>
+                <TextBlock Text="Models"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+
+          <Button Classes="sidebar-button" Command="{CompiledBinding SettingsCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Cog"/>
+                <TextBlock Text="Settings"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Content Area -->
+    <TransitioningContentControl Grid.Column="1"
+                               Content="{CompiledBinding CurrentPage}">
+      <TransitioningContentControl.PageTransition>
+        <CrossFade Duration="0:0:0.2"/>
+      </TransitioningContentControl.PageTransition>
+
+      <TransitioningContentControl.DataTemplates>
+        <DataTemplate DataType="{x:Type vm:ChatViewModel}">
+          <views:ChatView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ChatHistoryViewModel}">
+          <views:ChatHistoryView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ModelsViewModel}">
+          <views:ModelsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+          <views:SettingsView />
+        </DataTemplate>
+      </TransitioningContentControl.DataTemplates>
+    </TransitioningContentControl>
+  </Grid>
+
+  <UserControl.Styles>
+    <Style Selector="Button.sidebar-button">
+      <Setter Property="Height" Value="40"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Margin" Value="4,2"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="Button.sidebar-button:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
+    </Style>
+
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontFamily" Value="Cascadia Code"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Margin" Value="12,0,0,0"/>
+    </Style>
+
+    <Style Selector="material|MaterialIcon">
+      <Setter Property="Width" Value="20"/>
+      <Setter Property="Height" Value="20"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}"/>
+    </Style>
+
+    <Style Selector="Border.sidebar">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+        </Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+</UserControl>
+>>>>>>> frontend

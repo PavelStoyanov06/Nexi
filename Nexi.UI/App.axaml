@@ -1,10 +1,25 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Nexi.UI.App"
+             xmlns:material="using:Material.Icons.Avalonia"
+			 xmlns:converters="using:Nexi.UI.Converters"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
-    <Application.Styles>
-        <FluentTheme />
+  <Application.Resources>
+    <converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
+    <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
+    <converters:BoolToForegroundConverter x:Key="BoolToForegroundConverter"/>
+    <converters:ModelStatusToBrushConverter x:Key="ModelStatusToBrushConverter"/>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#A880E4"/>
+        <ColorPaletteResources x:Key="Dark" Accent="#A880E4"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <material:MaterialIconStyles />
     </Application.Styles>
 </Application>
