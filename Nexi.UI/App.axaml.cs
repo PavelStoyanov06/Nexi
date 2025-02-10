@@ -9,12 +9,14 @@ using Nexi.UI.Views;
 using Nexi.UI.ViewModels;
 using Avalonia.Themes.Fluent;
 using System;
+using Nexi.UI.Models;
 
 namespace Nexi.UI
 {
     public partial class App : Application
     {
         public new static App Current => (App)Application.Current!;
+        private static ThemeMode _currentTheme = ThemeMode.System;
         public IServiceProvider Services { get; }
 
         public App()
@@ -49,10 +51,17 @@ namespace Nexi.UI
             base.OnFrameworkInitializationCompleted();
         }
 
+        public static ThemeMode CurrentTheme
+        {
+            get => _currentTheme;
+            private set => _currentTheme = value;
+        }
+
         public static void UpdateTheme(ThemeMode mode)
         {
             if (Current != null)
             {
+                CurrentTheme = mode; // Store the selected theme
                 switch (mode)
                 {
                     case ThemeMode.Light:

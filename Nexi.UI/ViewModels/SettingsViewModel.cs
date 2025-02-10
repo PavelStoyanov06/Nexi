@@ -1,7 +1,8 @@
-﻿using Avalonia;
-using ReactiveUI;
+﻿using ReactiveUI;
 using System;
 using System.Collections.Generic;
+using Nexi.UI.Models;
+using Avalonia.Styling;
 
 namespace Nexi.UI.ViewModels
 {
@@ -16,16 +17,30 @@ namespace Nexi.UI.ViewModels
 
         public SettingsViewModel()
         {
+            // Initialize with current theme
+            _selectedTheme = GetCurrentTheme();
+
             // Subscribe to theme changes
             this.WhenAnyValue(x => x.SelectedTheme)
-                .Subscribe(UpdateTheme);
+                    .Subscribe(UpdateTheme);
 
             this.WhenAnyValue(x => x.UseSystemAccent)
-                .Subscribe(UpdateAccentColor);
+                    .Subscribe(UpdateAccentColor);
         }
 
-        public IEnumerable<ThemeMode> ThemeOptions => Enum.GetValues<ThemeMode>();
+        private ThemeMode GetCurrentTheme()
+        {
+            var currentTheme = App.Current?.RequestedThemeVariant;
+            if (currentTheme == null)
+                return ThemeMode.System;
+            if (currentTheme == ThemeVariant.Light)
+                return ThemeMode.Light;
+            if (currentTheme == ThemeVariant.Dark)
+                return ThemeMode.Dark;
+            return ThemeMode.System;
+        }
 
+        // Existing properties
         public int SelectedModelIndex
         {
             get => _selectedModelIndex;
@@ -50,6 +65,9 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _inputSensitivity, value);
         }
 
+        // Theme properties
+        public IEnumerable<ThemeMode> ThemeOptions => Enum.GetValues<ThemeMode>();
+
         public ThemeMode SelectedTheme
         {
             get => _selectedTheme;
@@ -65,18 +83,12 @@ namespace Nexi.UI.ViewModels
         private void UpdateTheme(ThemeMode mode)
         {
             App.UpdateTheme(mode);
+            _selectedTheme = mode;
         }
 
         private void UpdateAccentColor(bool useSystem)
         {
             App.UpdateAccentColor(useSystem);
         }
-    }
-
-    public enum ThemeMode
-    {
-        System,
-        Light,
-        Dark
     }
 }

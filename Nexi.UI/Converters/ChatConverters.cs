@@ -1,7 +1,9 @@
 ﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using System;
 using System.Globalization;
 
@@ -34,10 +36,17 @@ namespace Nexi.UI.Converters
         {
             if (value is bool isUser)
             {
-
-                return isUser ?
-                    Brushes.White :
-                    new SolidColorBrush(Color.Parse("#FFFFFF"));
+                if (isUser)
+                {
+                    return Brushes.White;
+                }
+                else
+                {
+                    var isDarkTheme = Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
+                    return isDarkTheme ?
+                        new SolidColorBrush(Color.Parse("#FFFFFF")) :
+                        new SolidColorBrush(Color.Parse("#000000"));
+                }
             }
             return null;
         }
