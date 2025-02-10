@@ -10,6 +10,7 @@ using Nexi.UI.ViewModels;
 using Avalonia.Themes.Fluent;
 using System;
 using Nexi.UI.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Nexi.UI
 {
@@ -27,8 +28,19 @@ namespace Nexi.UI
         private static IServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
+
+            // Add logging
+            services.AddLogging(configure =>
+            {
+                configure.AddDebug(); // Logs to debug output window
+                configure.AddConsole(); // Logs to console
+            });
+
+            // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
+            services.AddSingleton<IVoiceService, VoiceService>();
             services.AddSingleton<MainViewModel>();
+
             return services.BuildServiceProvider();
         }
 

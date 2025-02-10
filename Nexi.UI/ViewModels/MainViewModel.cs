@@ -12,13 +12,15 @@ namespace Nexi.UI.ViewModels
         private const double EXPANDED_WIDTH = 250;
         private const double COLLAPSED_WIDTH = 60;
         private readonly ICommandProcessor _commandProcessor;
+        private readonly IVoiceService _voiceService;
 
-        public MainViewModel(ICommandProcessor commandProcessor)
+        public MainViewModel(ICommandProcessor commandProcessor, IVoiceService voiceService)
         {
             _commandProcessor = commandProcessor;
+            _voiceService = voiceService;
 
             // Initialize with ChatView
-            _currentPage = new ChatViewModel(_commandProcessor);
+            _currentPage = new ChatViewModel(_commandProcessor, _voiceService);
 
             UpdateSidebarWidth();
 
@@ -69,7 +71,7 @@ namespace Nexi.UI.ViewModels
 
         private void NavigateToNewChat()
         {
-            CurrentPage = new ChatViewModel(_commandProcessor);
+            CurrentPage = new ChatViewModel(_commandProcessor, _voiceService);
         }
 
         private void NavigateToChatHistory()
