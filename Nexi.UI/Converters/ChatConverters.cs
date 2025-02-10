@@ -34,7 +34,10 @@ namespace Nexi.UI.Converters
         {
             if (value is bool isUser)
             {
-                return isUser ? Brushes.White : Application.Current?.Resources["TextControlForeground"];
+
+                return isUser ?
+                    Brushes.White :
+                    new SolidColorBrush(Color.Parse("#FFFFFF"));
             }
             return null;
         }

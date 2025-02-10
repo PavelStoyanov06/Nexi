@@ -3,15 +3,12 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:models="using:Nexi.UI.Models"
              xmlns:material="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Nexi.UI.Views.ChatView"
              x:CompileBindings="True"
              x:DataType="vm:ChatViewModel">
-
-  <Design.DataContext>
-    <vm:ChatViewModel />
-  </Design.DataContext>
 
   <Grid RowDefinitions="*,Auto">
     <!-- Messages Area -->
@@ -25,7 +22,7 @@
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:ChatMessage">
+          <DataTemplate x:DataType="models:ChatMessage">
             <Border Padding="16"
                     CornerRadius="20,20,20,4"
                     BoxShadow="0 2 8 0 #30000000"
@@ -34,9 +31,10 @@
                     MaxWidth="600">
               <StackPanel>
                 <TextBlock Text="{CompiledBinding Content}"
-                         TextWrapping="Wrap"
-                         FontSize="14"
-                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
+                   TextWrapping="Wrap"
+                   FontSize="14"
+                   Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"
+                   Classes.user="{CompiledBinding IsUser}"/>
                 <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
                          FontSize="11"
                          Margin="0,8,0,0"
@@ -110,83 +108,87 @@
                 IsEnabled="{CompiledBinding HasMessageText}">
           <material:MaterialIcon Kind="Send" Width="20" Height="20" Foreground="White"/>
         </Button>
-        <Grid.Styles>
-          <!-- Send Button -->
-          <Style Selector="Button.send-button">
-            <Setter Property="Transitions">
-              <Transitions>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
-                <BrushTransition Property="Background" Duration="0:0:0.2"/>
-              </Transitions>
-            </Setter>
-            <Setter Property="RenderTransform" Value="none"/>
-          </Style>
-
-          <Style Selector="Button.send-button:pointerover">
-            <Setter Property="RenderTransform" Value="scale(1.1)"/>
-            <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
-          </Style>
-
-          <!-- Voice Toggle -->
-          <Style Selector="ToggleButton">
-            <Setter Property="Transitions">
-              <Transitions>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
-                <BrushTransition Property="Background" Duration="0:0:0.2"/>
-              </Transitions>
-            </Setter>
-            <Setter Property="RenderTransform" Value="none"/>
-          </Style>
-
-          <Style Selector="ToggleButton:pointerover">
-            <Setter Property="RenderTransform" Value="scale(1.1)"/>
-          </Style>
-
-          <!-- Clear Button -->
-          <Style Selector="Button:not(.send-button)">
-            <Setter Property="Transitions">
-              <Transitions>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
-              </Transitions>
-            </Setter>
-            <Setter Property="RenderTransform" Value="none"/>
-          </Style>
-
-          <Style Selector="Button:not(.send-button):pointerover">
-            <Setter Property="RenderTransform" Value="scale(1.1)"/>
-          </Style>
-
-          <!-- Message Animation -->
-          <Style Selector="Border.message">
-            <Setter Property="Opacity" Value="0"/>
-            <Setter Property="Transitions">
-              <Transitions>
-                <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.3"/>
-              </Transitions>
-            </Setter>
-            <Setter Property="RenderTransform" Value="translateY(20px)"/>
-          </Style>
-
-          <Style Selector="Border.message.show">
-            <Setter Property="Opacity" Value="1"/>
-            <Setter Property="RenderTransform" Value="none"/>
-          </Style>
-
-          <!-- TextBox Animation -->
-          <Style Selector="TextBox">
-            <Setter Property="Transitions">
-              <Transitions>
-                <BrushTransition Property="BorderBrush" Duration="0:0:0.2"/>
-              </Transitions>
-            </Setter>
-          </Style>
-
-          <Style Selector="TextBox:focus">
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-          </Style>
-        </Grid.Styles>
       </Grid>
     </Border>
   </Grid>
+
+  <UserControl.Styles>
+    <!-- Send Button -->
+    <Style Selector="Button.send-button">
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="Button.send-button:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
+    </Style>
+
+    <!-- Voice Toggle -->
+    <Style Selector="ToggleButton">
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="ToggleButton:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+    </Style>
+
+    <!-- Clear Button -->
+    <Style Selector="Button:not(.send-button)">
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <Style Selector="Button:not(.send-button):pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+    </Style>
+
+    <!-- Message Animation -->
+    <Style Selector="Border.message">
+      <Setter Property="Opacity" Value="0"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.3"/>
+        </Transitions>
+      </Setter>
+      <Setter Property="RenderTransform" Value="translateY(20px)"/>
+    </Style>
+
+    <Style Selector="Border.message.show">
+      <Setter Property="Opacity" Value="1"/>
+      <Setter Property="RenderTransform" Value="none"/>
+    </Style>
+
+    <!-- TextBox Animation -->
+    <Style Selector="TextBox">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <Style Selector="TextBox:focus">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+    </Style>
+    <Style Selector="TextBlock:not(.user)">
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+  </UserControl.Styles>
 </UserControl>

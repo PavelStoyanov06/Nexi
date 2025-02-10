@@ -25,11 +25,8 @@ namespace Nexi.UI
         private static IServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
-
-            // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<MainViewModel>();
-
             return services.BuildServiceProvider();
         }
 
