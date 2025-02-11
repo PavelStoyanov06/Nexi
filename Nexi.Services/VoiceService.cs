@@ -1,9 +1,11 @@
 ﻿using NAudio.Wave;
-using Nexi.Services.Interfaces;
+using NAudio.CoreAudioApi;
 using Whisper.net;
 using Whisper.net.Ggml;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Nexi.Services.Interfaces;
+using System.Text;
 
 namespace Nexi.Services
 {
@@ -17,6 +19,9 @@ namespace Nexi.Services
         private bool _isListening;
         private readonly SemaphoreSlim _stateLock = new(1, 1);
         private bool _disposed;
+        private readonly WaveOutEvent _waveOut;
+        private AudioFileReader? _startSound;
+        private AudioFileReader? _stopSound;
 
         public event EventHandler<string>? SpeechRecognized;
 
@@ -25,8 +30,12 @@ namespace Nexi.Services
         public VoiceService(ILogger<VoiceService> logger)
         {
             _logger = logger;
+            _logger.LogInformation("VoiceService constructor called");
             _audioQueue = new BlockingCollection<byte[]>();
+            _waveOut = new WaveOutEvent();
             InitializeWhisper();
+            LoadSoundEffects();
+            _logger.LogInformation("VoiceService initialization completed");
         }
 
         private async void InitializeWhisper()
@@ -53,6 +62,60 @@ namespace Nexi.Services
             }
         }
 
+        private void LoadSoundEffects()
+        {
+            try
+            {
+                var startSoundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sounds", "start.wav");
+                var stopSoundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sounds", "stop.wav");
+
+                _logger.LogInformation($"Loading sound effects from: {startSoundPath} and {stopSoundPath}");
+
+                if (File.Exists(startSoundPath))
+                {
+                    _startSound = new AudioFileReader(startSoundPath);
+                    _logger.LogInformation("Start sound loaded successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("Start sound file not found");
+                }
+
+                if (File.Exists(stopSoundPath))
+                {
+                    _stopSound = new AudioFileReader(stopSoundPath);
+                    _logger.LogInformation("Stop sound loaded successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("Stop sound file not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load sound effects");
+            }
+        }
+
+        private void PlaySound(AudioFileReader? sound)
+        {
+            try
+            {
+                if (sound != null)
+                {
+                    sound.Position = 0;
+                    _waveOut.Stop();
+                    _waveOut.Init(sound);
+                    _waveOut.Play();
+                    _logger.LogInformation("Sound effect played successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to play sound effect");
+            }
+        }
+
         public async Task StartListeningAsync(CancellationToken cancellationToken = default)
         {
             await _stateLock.WaitAsync(cancellationToken);
@@ -64,20 +127,23 @@ namespace Nexi.Services
                     return;
                 }
 
-                // Check if we have the Whisper model
                 if (_whisperFactory == null)
                 {
                     _logger.LogError("Whisper not initialized - cannot start listening");
                     return;
                 }
 
-                // Log microphone devices
-                var devices = WaveIn.Devices;
-                _logger.LogInformation($"Available audio devices: {string.Join(", ", devices.Select(d => d.ProductName))}");
+                // Log available audio devices
+                using var enumerator = new MMDeviceEnumerator();
+                var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+                _logger.LogInformation($"Available audio devices: {string.Join(", ", devices.Select(d => d.FriendlyName))}");
+
+                // Play start sound
+                PlaySound(_startSound);
 
                 _waveIn = new WaveInEvent
                 {
-                    WaveFormat = new WaveFormat(16000, 1),
+                    WaveFormat = new WaveFormat(16000, 16, 1), // 16kHz, 16-bit, mono
                     BufferMilliseconds = 50
                 };
                 _logger.LogInformation("WaveIn initialized");
@@ -115,6 +181,9 @@ namespace Nexi.Services
                     return;
                 }
 
+                // Play stop sound
+                PlaySound(_stopSound);
+
                 _waveIn?.StopRecording();
                 _waveIn?.Dispose();
                 _waveIn = null;
@@ -144,6 +213,9 @@ namespace Nexi.Services
 
             try
             {
+                // More obvious logging for debugging
+                _logger.LogInformation($"Receiving audio data: {e.BytesRecorded} bytes");
+
                 // Log audio levels for debugging
                 var maxAmplitude = 0;
                 for (int i = 0; i < e.BytesRecorded; i += 2)
@@ -151,14 +223,15 @@ namespace Nexi.Services
                     var sample = BitConverter.ToInt16(e.Buffer, i);
                     maxAmplitude = Math.Max(maxAmplitude, Math.Abs(sample));
                 }
-                _logger.LogDebug($"Audio level: {maxAmplitude}");
+                _logger.LogInformation($"Audio level: {maxAmplitude}"); // Changed to Information for debugging
 
                 // Copy the audio data
                 var buffer = new byte[e.BytesRecorded];
                 Array.Copy(e.Buffer, buffer, e.BytesRecorded);
 
                 // Add to processing queue
-                _audioQueue.TryAdd(buffer);
+                var added = _audioQueue.TryAdd(buffer);
+                _logger.LogInformation($"Added to queue: {added}");
             }
             catch (Exception ex)
             {
@@ -200,7 +273,6 @@ namespace Nexi.Services
             }
             catch (OperationCanceledException)
             {
-                // Expected when stopping
                 _logger.LogInformation("Audio processing cancelled");
             }
             catch (Exception ex)
@@ -213,7 +285,6 @@ namespace Nexi.Services
         {
             try
             {
-                // Convert bytes to 16-bit samples and check amplitude
                 for (int i = 0; i < audio.Length; i += 2)
                 {
                     if (i + 1 >= audio.Length) break;
@@ -240,14 +311,32 @@ namespace Nexi.Services
 
             try
             {
+                // Convert raw PCM to WAV format
+                using var memoryStream = new MemoryStream();
+                using var writer = new BinaryWriter(memoryStream);
+
+                // Write WAV header
+                writer.Write(Encoding.ASCII.GetBytes("RIFF")); // ChunkID
+                writer.Write(36 + audioData.Length); // ChunkSize
+                writer.Write(Encoding.ASCII.GetBytes("WAVE")); // Format
+                writer.Write(Encoding.ASCII.GetBytes("fmt ")); // Subchunk1ID
+                writer.Write(16); // Subchunk1Size
+                writer.Write((short)1); // AudioFormat (PCM)
+                writer.Write((short)1); // NumChannels (Mono)
+                writer.Write(16000); // SampleRate
+                writer.Write(32000); // ByteRate
+                writer.Write((short)2); // BlockAlign
+                writer.Write((short)16); // BitsPerSample
+                writer.Write(Encoding.ASCII.GetBytes("data")); // Subchunk2ID
+                writer.Write(audioData.Length); // Subchunk2Size
+                writer.Write(audioData); // Data
+
+                memoryStream.Position = 0;
+
                 using var processor = _whisperFactory.CreateBuilder()
                     .WithLanguage("en")
                     .Build();
 
-                // Convert audio to required format if needed
-                using var memoryStream = new MemoryStream(audioData);
-
-                // Process with Whisper
                 await foreach (var result in processor.ProcessAsync(memoryStream))
                 {
                     if (!string.IsNullOrWhiteSpace(result.Text))
@@ -286,6 +375,9 @@ namespace Nexi.Services
                     _whisperFactory?.Dispose();
                     _audioQueue.Dispose();
                     _stateLock.Dispose();
+                    _startSound?.Dispose();
+                    _stopSound?.Dispose();
+                    _waveOut.Dispose();
                 }
                 catch (Exception ex)
                 {
