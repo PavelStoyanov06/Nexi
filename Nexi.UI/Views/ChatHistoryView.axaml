@@ -45,7 +45,7 @@
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:ChatHistoryItem">
+          <DataTemplate x:DataType="vm:ChatHistoryItemViewModel">
             <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).OpenChatCommand}"
                     CommandParameter="{CompiledBinding Id}"
                     Classes="chat-item"

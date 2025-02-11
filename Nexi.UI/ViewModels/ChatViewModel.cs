@@ -5,7 +5,8 @@ using System.Windows.Input;
 using Nexi.Services.Interfaces;
 using Nexi.UI.Models;
 using Avalonia.Threading;
-using Avalonia;
+using System.Threading.Tasks;
+using Nexi.Data.Models;
 
 namespace Nexi.UI.ViewModels
 {
@@ -13,31 +14,45 @@ namespace Nexi.UI.ViewModels
     {
         private readonly ICommandProcessor _commandProcessor;
         private readonly IVoiceService _voiceService;
+        private readonly IChatStorageService _chatStorage;
         private string _currentMessage = string.Empty;
         private bool _isVoiceModeEnabled;
         private ObservableCollection<ChatMessage> _messages;
         private bool _isProcessing;
+        private string _sessionId;
+        private string _title;
 
-        public ChatViewModel(ICommandProcessor commandProcessor, IVoiceService voiceService)
+        public ChatViewModel(ICommandProcessor commandProcessor, IVoiceService voiceService, IChatStorageService chatStorage, string? sessionId = null)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
+            _chatStorage = chatStorage;
+            _sessionId = sessionId ?? Guid.NewGuid().ToString();
+            _title = "New Chat";
             Messages = new ObservableCollection<ChatMessage>();
 
             // Initialize commands
-            SendMessageCommand = ReactiveCommand.Create(SendMessage);
+            SendMessageCommand = ReactiveCommand.CreateFromTask(SendMessageAsync);
             ClearMessageCommand = ReactiveCommand.Create(ClearMessage);
 
             // Subscribe to voice recognition events
             _voiceService.SpeechRecognized += OnSpeechRecognized;
 
-            // Add welcome message
-            Messages.Add(new ChatMessage
+            if (sessionId == null)
             {
-                Content = "Hello! I'm Nexi. You can type 'help' to see available commands, or use the microphone button for voice commands.",
-                Timestamp = DateTime.Now,
-                IsUser = false
-            });
+                // Add welcome message
+                _ = AddMessageAsync(new ChatMessage
+                {
+                    Content = "Hello! I'm Nexi. You can type 'help' to see available commands, or use the microphone button for voice commands.",
+                    Timestamp = DateTime.Now,
+                    IsUser = false
+                });
+            }
+            else
+            {
+                // Load existing chat
+                _ = LoadChatHistoryAsync(sessionId);
+            }
 
             // Subscribe to voice mode changes
             this.WhenAnyValue(x => x.IsVoiceModeEnabled)
@@ -46,7 +61,7 @@ namespace Nexi.UI.ViewModels
                     if (isEnabled)
                     {
                         await _voiceService.StartListeningAsync();
-                        Messages.Add(new ChatMessage
+                        await AddMessageAsync(new ChatMessage
                         {
                             Content = "Voice mode enabled. Speak your commands.",
                             Timestamp = DateTime.Now,
@@ -56,7 +71,7 @@ namespace Nexi.UI.ViewModels
                     else
                     {
                         await _voiceService.StopListeningAsync();
-                        Messages.Add(new ChatMessage
+                        await AddMessageAsync(new ChatMessage
                         {
                             Content = "Voice mode disabled.",
                             Timestamp = DateTime.Now,
@@ -64,6 +79,12 @@ namespace Nexi.UI.ViewModels
                         });
                     }
                 });
+        }
+
+        public string Title
+        {
+            get => _title;
+            set => this.RaiseAndSetIfChanged(ref _title, value);
         }
 
         public ObservableCollection<ChatMessage> Messages
@@ -99,26 +120,44 @@ namespace Nexi.UI.ViewModels
         public ICommand SendMessageCommand { get; }
         public ICommand ClearMessageCommand { get; }
 
-        private void SendMessage()
+        private async Task LoadChatHistoryAsync(string sessionId)
+        {
+            var session = await _chatStorage.GetSessionAsync(sessionId);
+            if (session != null)
+            {
+                Title = session.Title;
+                foreach (var message in session.Messages)
+                {
+                    Messages.Add(new ChatMessage
+                    {
+                        Content = message.Content,
+                        Timestamp = message.Timestamp,
+                        IsUser = message.IsUser
+                    });
+                }
+            }
+        }
+
+        private async Task SendMessageAsync()
         {
             if (string.IsNullOrWhiteSpace(CurrentMessage)) return;
 
-            ProcessInput(CurrentMessage);
+            await ProcessInputAsync(CurrentMessage);
             CurrentMessage = string.Empty;
         }
 
         private void OnSpeechRecognized(object? sender, string text)
         {
-            Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(async () =>
             {
-                ProcessInput(text);
+                await ProcessInputAsync(text);
             });
         }
 
-        private void ProcessInput(string input)
+        private async Task ProcessInputAsync(string input)
         {
             // Add user's message
-            Messages.Add(new ChatMessage
+            await AddMessageAsync(new ChatMessage
             {
                 Content = input,
                 Timestamp = DateTime.Now,
@@ -137,12 +176,43 @@ namespace Nexi.UI.ViewModels
             }
 
             // Add response
-            Messages.Add(new ChatMessage
+            await AddMessageAsync(new ChatMessage
             {
                 Content = response,
                 Timestamp = DateTime.Now,
                 IsUser = false
             });
+        }
+
+        private async Task AddMessageAsync(ChatMessage message)
+        {
+            Messages.Add(message);
+
+            // Convert to storage message
+            var messageData = new ChatMessageData
+            {
+                Content = message.Content,
+                Timestamp = message.Timestamp,
+                IsUser = message.IsUser
+            };
+
+            try
+            {
+                var session = await _chatStorage.GetSessionAsync(_sessionId);
+                if (session == null)
+                {
+                    // Create new session
+                    session = await _chatStorage.CreateSessionAsync(Title);
+                    _sessionId = session.Id;
+                }
+
+                await _chatStorage.AddMessageAsync(_sessionId, messageData);
+            }
+            catch (Exception ex)
+            {
+                // Handle error (maybe show in UI)
+                System.Diagnostics.Debug.WriteLine($"Error saving message: {ex}");
+            }
         }
 
         private void ClearMessage()

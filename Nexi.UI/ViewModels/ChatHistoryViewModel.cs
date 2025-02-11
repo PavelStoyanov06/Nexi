@@ -3,48 +3,61 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
+using System.Threading.Tasks;
+using System.Reactive.Linq;
+using Microsoft.Extensions.Logging;
+using Nexi.Services.Interfaces;
+using Nexi.Data.Models;
+using System.Reactive.Concurrency;
+using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Nexi.UI.ViewModels
 {
     public class ChatHistoryViewModel : ViewModelBase
     {
+        private readonly IChatStorageService _storageService;
+        private readonly ILogger<ChatHistoryViewModel> _logger;
+        private readonly ICommandProcessor _commandProcessor;
+        private readonly IVoiceService _voiceService;
+        private readonly MainViewModel _mainViewModel;
         private string _searchQuery = string.Empty;
-        private ObservableCollection<ChatHistoryItem> _chats;
+        private ObservableCollection<ChatHistoryItemViewModel> _chats;
+        private readonly ObservableAsPropertyHelper<ObservableCollection<ChatHistoryItemViewModel>> _filteredChats;
+        private bool _isLoading;
 
-        public ChatHistoryViewModel()
+        public ChatHistoryViewModel(
+            IChatStorageService storageService,
+            ILogger<ChatHistoryViewModel> logger,
+            ICommandProcessor commandProcessor,
+            IVoiceService voiceService,
+            MainViewModel mainViewModel)
         {
+            _storageService = storageService;
+            _logger = logger;
+            _commandProcessor = commandProcessor;
+            _voiceService = voiceService;
+            _mainViewModel = mainViewModel;
+            _chats = new ObservableCollection<ChatHistoryItemViewModel>();
+
             // Initialize commands
             ClearSearchCommand = ReactiveCommand.Create(ClearSearch);
-            OpenChatCommand = ReactiveCommand.Create<string>(OpenChat);
+            OpenChatCommand = ReactiveCommand.CreateFromTask<string>(OpenChatAsync);
+            DeleteChatCommand = ReactiveCommand.CreateFromTask<string>(DeleteChatAsync);
 
-            // Initialize with sample data
-            _chats = new ObservableCollection<ChatHistoryItem>
-            {
-                new ChatHistoryItem
-                {
-                    Id = "1",
-                    Title = "General Questions",
-                    LastMessage = "I'd be happy to help you with that...",
-                    LastMessageTime = DateTime.Now.AddMinutes(-30),
-                    LastMessageDate = DateTime.Now.Date
-                },
-                new ChatHistoryItem
-                {
-                    Id = "2",
-                    Title = "Code Review",
-                    LastMessage = "Here's the analysis of your code...",
-                    LastMessageTime = DateTime.Now.AddHours(-2),
-                    LastMessageDate = DateTime.Now.Date
-                },
-                new ChatHistoryItem
-                {
-                    Id = "3",
-                    Title = "Project Planning",
-                    LastMessage = "Let's break down the tasks...",
-                    LastMessageTime = DateTime.Now.AddDays(-1).AddHours(-3),
-                    LastMessageDate = DateTime.Now.AddDays(-1).Date
-                }
-            };
+            // Setup filtered chats
+            _filteredChats = this.WhenAnyValue(x => x.SearchQuery)
+                .Throttle(TimeSpan.FromMilliseconds(300))
+                .Select(query => new ObservableCollection<ChatHistoryItemViewModel>(
+                    _chats.Where(c =>
+                        string.IsNullOrWhiteSpace(query) ||
+                        c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        c.LastMessage.Contains(query, StringComparison.OrdinalIgnoreCase))
+                ))
+                .ToProperty(this, x => x.FilteredChats);
+
+            // Load initial data
+            _ = LoadHistoryAsync();
         }
 
         public string SearchQuery
@@ -53,41 +66,82 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _searchQuery, value);
         }
 
-        public ObservableCollection<ChatHistoryItem> FilteredChats
-        {
-            get
-            {
-                if (string.IsNullOrWhiteSpace(SearchQuery))
-                    return _chats;
+        public ObservableCollection<ChatHistoryItemViewModel> FilteredChats => _filteredChats.Value;
 
-                return new ObservableCollection<ChatHistoryItem>(
-                    _chats.Where(c =>
-                        c.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
-                        c.LastMessage.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
-                );
-            }
+        public bool IsLoading
+        {
+            get => _isLoading;
+            private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
         }
 
         public ICommand ClearSearchCommand { get; }
         public ICommand OpenChatCommand { get; }
+        public ICommand DeleteChatCommand { get; }
 
         private void ClearSearch()
         {
             SearchQuery = string.Empty;
         }
 
-        private void OpenChat(string chatId)
+        private async Task LoadHistoryAsync()
         {
-            // TODO: Implement chat opening logic
-        }
-    }
+            try
+            {
+                IsLoading = true;
+                var sessions = await _storageService.GetAllSessionsAsync();
 
-    public class ChatHistoryItem
-    {
-        public required string Id { get; set; }
-        public required string Title { get; set; }
-        public required string LastMessage { get; set; }
-        public DateTime LastMessageTime { get; set; }
-        public DateTime LastMessageDate { get; set; }
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _chats.Clear();
+                    foreach (var session in sessions.OrderByDescending(s => s.LastModifiedAt))
+                    {
+                        _chats.Add(new ChatHistoryItemViewModel(session));
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading chat history");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
+        private async Task OpenChatAsync(string chatId)
+        {
+            try
+            {
+                var session = await _storageService.GetSessionAsync(chatId);
+                if (session != null)
+                {
+                    var chatViewModel = new ChatViewModel(
+                        _commandProcessor,
+                        _voiceService,
+                        _storageService,
+                        chatId);
+
+                    _mainViewModel.CurrentPage = chatViewModel;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error opening chat {ChatId}", chatId);
+            }
+        }
+
+        private async Task DeleteChatAsync(string chatId)
+        {
+            try
+            {
+                await _storageService.DeleteSessionAsync(chatId);
+                await LoadHistoryAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting chat {ChatId}", chatId);
+            }
+        }
     }
 }

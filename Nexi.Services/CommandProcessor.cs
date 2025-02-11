@@ -119,16 +119,50 @@ namespace Nexi.Services
 
         public bool IsCommand(string input)
         {
-            return _commands.ContainsKey(input.Trim().ToLower());
+            // Normalize the input by removing punctuation and converting to lowercase
+            var normalizedInput = new string(input.Where(c => !char.IsPunctuation(c)).ToArray())
+                .Trim()
+                .ToLower();
+
+            // Try exact match first
+            if (_commands.ContainsKey(normalizedInput))
+                return true;
+
+            // Try to match command variations
+            foreach (var command in _commands.Keys)
+            {
+                // Handle common voice recognition variations
+                if (normalizedInput == command ||
+                    normalizedInput.Contains(command) ||
+                    normalizedInput.Replace(" ", "") == command.Replace(" ", ""))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public string ProcessCommand(string input)
         {
-            var trimmedInput = input.Trim().ToLower();
-            if (_commands.TryGetValue(trimmedInput, out var handler))
-            {
+            var normalizedInput = new string(input.Where(c => !char.IsPunctuation(c)).ToArray())
+                .Trim()
+                .ToLower();
+
+            // Try exact match first
+            if (_commands.TryGetValue(normalizedInput, out var handler))
                 return handler();
+
+            // Try to find matching command
+            foreach (var (command, commandHandler) in _commands)
+            {
+                if (normalizedInput.Contains(command) ||
+                    normalizedInput.Replace(" ", "") == command.Replace(" ", ""))
+                {
+                    return commandHandler();
+                }
             }
+
             return $"Unknown command: {input}";
         }
 

@@ -39,7 +39,10 @@ namespace Nexi.UI
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
+            services.AddSingleton<IChatStorageService, ChatStorageService>();
             services.AddSingleton<MainViewModel>();
+            services.AddTransient<ChatHistoryViewModel>();
+            services.AddTransient<ChatViewModel>();
 
             return services.BuildServiceProvider();
         }

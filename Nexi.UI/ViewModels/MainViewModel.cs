@@ -1,6 +1,8 @@
 ﻿using ReactiveUI;
 using System.Windows.Input;
 using Nexi.Services.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
+using System;
 
 namespace Nexi.UI.ViewModels
 {
@@ -13,14 +15,22 @@ namespace Nexi.UI.ViewModels
         private const double COLLAPSED_WIDTH = 60;
         private readonly ICommandProcessor _commandProcessor;
         private readonly IVoiceService _voiceService;
+        private readonly IChatStorageService _chatStorage;
+        private readonly IServiceProvider _serviceProvider;
 
-        public MainViewModel(ICommandProcessor commandProcessor, IVoiceService voiceService)
+        public MainViewModel(
+            ICommandProcessor commandProcessor,
+            IVoiceService voiceService,
+            IChatStorageService chatStorage,
+            IServiceProvider serviceProvider)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
+            _chatStorage = chatStorage;
+            _serviceProvider = serviceProvider;
 
             // Initialize with ChatView
-            _currentPage = new ChatViewModel(_commandProcessor, _voiceService);
+            _currentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage);
 
             UpdateSidebarWidth();
 
@@ -55,7 +65,7 @@ namespace Nexi.UI.ViewModels
         public ViewModelBase CurrentPage
         {
             get => _currentPage;
-            private set => this.RaiseAndSetIfChanged(ref _currentPage, value);
+            set => this.RaiseAndSetIfChanged(ref _currentPage, value);
         }
 
         private void UpdateSidebarWidth()
@@ -71,12 +81,13 @@ namespace Nexi.UI.ViewModels
 
         private void NavigateToNewChat()
         {
-            CurrentPage = new ChatViewModel(_commandProcessor, _voiceService);
+            CurrentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage);
         }
 
         private void NavigateToChatHistory()
         {
-            CurrentPage = new ChatHistoryViewModel();
+            var chatHistoryVm = _serviceProvider.GetRequiredService<ChatHistoryViewModel>();
+            CurrentPage = chatHistoryVm;
         }
 
         private void NavigateToModels()
