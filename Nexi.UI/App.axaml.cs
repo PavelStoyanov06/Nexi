@@ -13,6 +13,7 @@ using Nexi.Data.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Nexi.Data.Context;
+using System.Threading.Tasks;
 
 namespace Nexi.UI
 {
@@ -93,7 +94,7 @@ namespace Nexi.UI
             AvaloniaXamlLoader.Load(this);
         }
 
-        public override void OnFrameworkInitializationCompleted()
+        public override async void OnFrameworkInitializationCompleted()
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -102,9 +103,38 @@ namespace Nexi.UI
                 {
                     DataContext = mainViewModel
                 };
+
+                // Load and apply user settings on startup
+                await LoadAndApplyUserSettingsAsync();
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        private async Task LoadAndApplyUserSettingsAsync()
+        {
+            try
+            {
+                // Get the user settings service
+                var userSettingsService = Services.GetRequiredService<IUserSettingsService>();
+
+                // Load settings
+                var settings = await userSettingsService.GetSettingsAsync();
+
+                // Apply theme
+                UpdateTheme(settings.SelectedTheme);
+
+                // Apply accent color
+                UpdateAccentColor(settings.UseSystemAccent);
+
+                // Here you could apply other global settings as needed
+            }
+            catch (Exception ex)
+            {
+                // Get logger and log the error
+                var logger = Services.GetRequiredService<ILogger<App>>();
+                logger.LogError(ex, "Error loading and applying user settings at startup");
+            }
         }
 
         public static ThemeMode CurrentTheme
