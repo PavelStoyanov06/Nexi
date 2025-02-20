@@ -1,7 +1,9 @@
 ﻿using System;
+using System.IO;
 using Avalonia;
 using Avalonia.ReactiveUI;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nexi.Data.Context;
 
@@ -16,11 +18,14 @@ namespace Nexi.UI.Desktop
         // Note: This is internal, not public
         internal static AppBuilder BuildAvaloniaApp()
         {
-            var services = new ServiceCollection();
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false)
+                .Build();
 
-            // Add DbContext configuration
+            var services = new ServiceCollection();
             services.AddDbContext<NexiDbContext>(options =>
-                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
+                options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()
@@ -28,5 +33,7 @@ namespace Nexi.UI.Desktop
                 .LogToTrace()
                 .UseReactiveUI();
         }
+
+
     }
 }

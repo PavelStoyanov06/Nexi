@@ -11,6 +11,8 @@ using Avalonia.Themes.Fluent;
 using System;
 using Nexi.Data.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using Nexi.Data.Context;
 
 namespace Nexi.UI
 {
@@ -32,21 +34,24 @@ namespace Nexi.UI
             // Add logging
             services.AddLogging(configure =>
             {
-                configure.AddDebug(); // Logs to debug output window
-                configure.AddConsole(); // Logs to console
+                configure.AddDebug();
+                configure.AddConsole();
             });
+
+            // Add DbContext
+            services.AddDbContext<NexiDbContext>(options =>
+                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
 
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
-            services.AddSingleton<IChatStorageService, ChatStorageService>();
+            services.AddScoped<IChatStorageService, ChatStorageService>(); // Changed to scoped
             services.AddSingleton<MainViewModel>();
             services.AddTransient<ChatHistoryViewModel>();
             services.AddTransient<ChatViewModel>();
 
             return services.BuildServiceProvider();
         }
-
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
