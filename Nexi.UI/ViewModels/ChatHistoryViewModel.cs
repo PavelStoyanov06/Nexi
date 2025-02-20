@@ -1,16 +1,13 @@
-﻿using ReactiveUI;
+﻿using Avalonia.Threading;
+using Microsoft.Extensions.Logging;
+using Nexi.Services.Interfaces;
+using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Windows.Input;
-using System.Threading.Tasks;
 using System.Reactive.Linq;
-using Microsoft.Extensions.Logging;
-using Nexi.Services.Interfaces;
-using Nexi.Data.Models;
-using System.Reactive.Concurrency;
-using Avalonia.Threading;
-using Microsoft.Extensions.DependencyInjection;
+using System.Threading.Tasks;
+using System.Windows.Input;
 
 namespace Nexi.UI.ViewModels
 {

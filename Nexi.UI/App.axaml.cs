@@ -9,7 +9,7 @@ using Nexi.UI.Views;
 using Nexi.UI.ViewModels;
 using Avalonia.Themes.Fluent;
 using System;
-using Nexi.UI.Models;
+using Nexi.Data.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Nexi.UI

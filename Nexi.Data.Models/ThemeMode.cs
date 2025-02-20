@@ -1,4 +1,4 @@
-﻿namespace Nexi.UI.Models
+﻿namespace Nexi.Data.Models
 {
     public enum ThemeMode
     {

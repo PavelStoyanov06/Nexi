@@ -1,7 +1,7 @@
 ﻿using ReactiveUI;
 using System;
 using System.Collections.Generic;
-using Nexi.UI.Models;
+using Nexi.Data.Models;
 using Avalonia.Styling;
 
 namespace Nexi.UI.ViewModels
