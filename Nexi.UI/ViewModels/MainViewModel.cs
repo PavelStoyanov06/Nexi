@@ -3,6 +3,7 @@ using System.Windows.Input;
 using Nexi.Services.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace Nexi.UI.ViewModels
 {
@@ -19,10 +20,10 @@ namespace Nexi.UI.ViewModels
         private readonly IServiceProvider _serviceProvider;
 
         public MainViewModel(
-            ICommandProcessor commandProcessor,
-            IVoiceService voiceService,
-            IChatStorageService chatStorage,
-            IServiceProvider serviceProvider)
+    ICommandProcessor commandProcessor,
+    IVoiceService voiceService,
+    IChatStorageService chatStorage,
+    IServiceProvider serviceProvider)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
@@ -30,7 +31,8 @@ namespace Nexi.UI.ViewModels
             _serviceProvider = serviceProvider;
 
             // Initialize with ChatView
-            _currentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage);
+            var logger = serviceProvider.GetRequiredService<ILogger<ChatViewModel>>();
+            _currentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage, logger);
 
             UpdateSidebarWidth();
 
@@ -81,7 +83,13 @@ namespace Nexi.UI.ViewModels
 
         private void NavigateToNewChat()
         {
-            CurrentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage);
+            // Make sure parameters are in the correct order
+            CurrentPage = new ChatViewModel(
+                _commandProcessor,
+                _voiceService,
+                _chatStorage,
+                _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>()  // Logger is 4th parameter
+            );
         }
 
         private void NavigateToChatHistory()
@@ -92,12 +100,14 @@ namespace Nexi.UI.ViewModels
 
         private void NavigateToModels()
         {
-            CurrentPage = new ModelsViewModel();
+            var modelsVm = _serviceProvider.GetRequiredService<ModelsViewModel>();
+            CurrentPage = modelsVm;
         }
 
         private void NavigateToSettings()
         {
-            CurrentPage = new SettingsViewModel();
+            var settingsVm = _serviceProvider.GetRequiredService<SettingsViewModel>();
+            CurrentPage = settingsVm;
         }
     }
 }

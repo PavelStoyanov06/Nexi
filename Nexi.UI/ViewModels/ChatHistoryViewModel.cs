@@ -1,5 +1,6 @@
 ﻿using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Nexi.Services.Interfaces;
 using ReactiveUI;
 using System;
@@ -8,6 +9,7 @@ using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Collections.Generic;
 
 namespace Nexi.UI.ViewModels
 {
@@ -18,6 +20,7 @@ namespace Nexi.UI.ViewModels
         private readonly ICommandProcessor _commandProcessor;
         private readonly IVoiceService _voiceService;
         private readonly MainViewModel _mainViewModel;
+        private readonly ILogger<ChatViewModel> _chatViewModelLogger;
         private string _searchQuery = string.Empty;
         private ObservableCollection<ChatHistoryItemViewModel> _chats;
         private readonly ObservableAsPropertyHelper<ObservableCollection<ChatHistoryItemViewModel>> _filteredChats;
@@ -28,13 +31,15 @@ namespace Nexi.UI.ViewModels
             ILogger<ChatHistoryViewModel> logger,
             ICommandProcessor commandProcessor,
             IVoiceService voiceService,
-            MainViewModel mainViewModel)
+            MainViewModel mainViewModel,
+            ILogger<ChatViewModel> chatViewModelLogger)
         {
             _storageService = storageService;
             _logger = logger;
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
             _mainViewModel = mainViewModel;
+            _chatViewModelLogger = chatViewModelLogger;
             _chats = new ObservableCollection<ChatHistoryItemViewModel>();
 
             // Initialize commands
@@ -117,6 +122,7 @@ namespace Nexi.UI.ViewModels
                         _commandProcessor,
                         _voiceService,
                         _storageService,
+                        _chatViewModelLogger,
                         chatId);
 
                     _mainViewModel.CurrentPage = chatViewModel;

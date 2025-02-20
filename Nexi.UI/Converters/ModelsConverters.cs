@@ -1,5 +1,6 @@
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Nexi.Data.Models;
 using Nexi.UI.ViewModels;
 using System;
 using System.Globalization;

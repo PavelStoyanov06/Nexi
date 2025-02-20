@@ -3,63 +3,45 @@ using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Linq;
+using Nexi.Data.Models;
+using Nexi.Services.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Nexi.UI.ViewModels
 {
     public class ModelsViewModel : ViewModelBase
     {
-        private ObservableCollection<AIModel> _availableModels;
+        private readonly IAIModelService _aiModelService;
+        private readonly ILogger<ModelsViewModel> _logger;
+        private ObservableCollection<AIModelData> _availableModels;
+        private bool _isLoading;
 
-        public ModelsViewModel()
+        public ModelsViewModel(IAIModelService aiModelService, ILogger<ModelsViewModel> logger)
         {
+            _aiModelService = aiModelService;
+            _logger = logger;
+            _availableModels = new ObservableCollection<AIModelData>();
+
             // Initialize commands
             RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
             DownloadModelCommand = ReactiveCommand.CreateFromTask<string>(DownloadModelAsync);
             DeleteModelCommand = ReactiveCommand.CreateFromTask<string>(DeleteModelAsync);
 
-            // Initialize with sample data
-            _availableModels = new ObservableCollection<AIModel>
-            {
-                new AIModel
-                {
-                    Id = "llama-7b",
-                    Name = "LLaMA 7B",
-                    Description = "A foundational large language model with 7 billion parameters.",
-                    Status = ModelStatus.NotDownloaded,
-                    Size = "13.5 GB",
-                    Version = "2.0.0",
-                    CanDownload = true,
-                    CanDelete = false
-                },
-                new AIModel
-                {
-                    Id = "mistral-7b",
-                    Name = "Mistral 7B",
-                    Description = "High-performance language model optimized for efficiency.",
-                    Status = ModelStatus.Downloading,
-                    Size = "13.8 GB",
-                    Version = "1.0.0",
-                    CanDownload = false,
-                    CanDelete = false
-                },
-                new AIModel
-                {
-                    Id = "llama-13b",
-                    Name = "LLaMA 13B",
-                    Description = "Enhanced version of LLaMA with 13 billion parameters.",
-                    Status = ModelStatus.Downloaded,
-                    Size = "24.1 GB",
-                    Version = "2.0.0",
-                    CanDownload = false,
-                    CanDelete = true
-                }
-            };
+            // Load models on startup
+            _ = RefreshModelsAsync();
         }
 
-        public ObservableCollection<AIModel> AvailableModels
+        public ObservableCollection<AIModelData> AvailableModels
         {
             get => _availableModels;
             private set => this.RaiseAndSetIfChanged(ref _availableModels, value);
+        }
+
+        public bool IsLoading
+        {
+            get => _isLoading;
+            private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
         }
 
         public ICommand RefreshModelsCommand { get; }
@@ -68,40 +50,79 @@ namespace Nexi.UI.ViewModels
 
         private async Task RefreshModelsAsync()
         {
-            // TODO: Implement model refresh logic
-            await Task.Delay(1000); // Simulate network delay
+            try
+            {
+                IsLoading = true;
+                var models = await _aiModelService.GetAllModelsAsync();
+
+                AvailableModels.Clear();
+                foreach (var model in models)
+                {
+                    AvailableModels.Add(model);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing models");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         private async Task DownloadModelAsync(string modelId)
         {
-            // TODO: Implement model download logic
-            await Task.Delay(1000); // Simulate download
+            try
+            {
+                IsLoading = true;
+                await _aiModelService.StartDownloadModelAsync(modelId);
+
+                // Update the UI to show model downloading
+                var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
+                if (model != null)
+                {
+                    model.Status = ModelStatus.Downloading;
+                }
+
+                // In a real app, you would start a background download process
+                // and have events to update the UI when download completes
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting model download");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         private async Task DeleteModelAsync(string modelId)
         {
-            // TODO: Implement model deletion logic
-            await Task.Delay(1000); // Simulate deletion
+            try
+            {
+                IsLoading = true;
+                bool success = await _aiModelService.DeleteModelAsync(modelId);
+
+                if (success)
+                {
+                    // Update the UI to show model is no longer downloaded
+                    var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
+                    if (model != null)
+                    {
+                        model.Status = ModelStatus.NotDownloaded;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting model");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
-    }
-
-    public class AIModel : ViewModelBase
-    {
-        public required string Id { get; set; }
-        public required string Name { get; set; }
-        public required string Description { get; set; }
-        public ModelStatus Status { get; set; }
-        public required string Size { get; set; }
-        public required string Version { get; set; }
-        public bool CanDownload { get; set; }
-        public bool CanDelete { get; set; }
-    }
-
-    public enum ModelStatus
-    {
-        NotDownloaded,
-        Downloading,
-        Downloaded,
-        Error
     }
 }

@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:models="using:Nexi.Data.Models"
              xmlns:material="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Nexi.UI.Views.ModelsView"
@@ -38,7 +39,7 @@
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:AIModel">
+          <DataTemplate x:DataType="models:AIModelData">
             <Border Background="{DynamicResource SystemChromeMediumColor}"
                     CornerRadius="12"
                     BoxShadow="0 2 8 0 #30000000">

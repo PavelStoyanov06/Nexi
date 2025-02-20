@@ -40,7 +40,8 @@ namespace Nexi.UI
 
             // Add DbContext
             services.AddDbContext<NexiDbContext>(options =>
-                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
+                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"),
+                ServiceLifetime.Scoped);
 
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
@@ -48,12 +49,45 @@ namespace Nexi.UI
             services.AddScoped<IChatStorageService, ChatStorageService>();
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
+
+            // Register ViewModels
             services.AddSingleton<MainViewModel>();
-            services.AddTransient<ChatHistoryViewModel>();
-            services.AddTransient<ChatViewModel>();
+
+            services.AddTransient(provider => {
+                var storageService = provider.GetRequiredService<IChatStorageService>();
+                var logger = provider.GetRequiredService<ILogger<ChatHistoryViewModel>>();
+                var commandProcessor = provider.GetRequiredService<ICommandProcessor>();
+                var voiceService = provider.GetRequiredService<IVoiceService>();
+                var mainViewModel = provider.GetRequiredService<MainViewModel>();
+                var chatViewModelLogger = provider.GetRequiredService<ILogger<ChatViewModel>>();
+                return new ChatHistoryViewModel(
+                    storageService, logger, commandProcessor, voiceService, mainViewModel, chatViewModelLogger);
+            });
+
+            services.AddTransient(provider => {
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var logger = provider.GetRequiredService<ILogger<ModelsViewModel>>();
+                return new ModelsViewModel(aiModelService, logger);
+            });
+
+            services.AddTransient(provider => {
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var logger = provider.GetRequiredService<ILogger<SettingsViewModel>>();
+                return new SettingsViewModel(userSettingsService, aiModelService, logger);
+            });
+
+            services.AddTransient(provider => {
+                var commandProcessor = provider.GetRequiredService<ICommandProcessor>();
+                var voiceService = provider.GetRequiredService<IVoiceService>();
+                var chatStorage = provider.GetRequiredService<IChatStorageService>();
+                var logger = provider.GetRequiredService<ILogger<ChatViewModel>>();
+                return new ChatViewModel(commandProcessor, voiceService, chatStorage, logger);
+            });
 
             return services.BuildServiceProvider();
         }
+
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);

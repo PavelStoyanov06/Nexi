@@ -1,12 +1,14 @@
 ﻿using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows.Input;
 using Nexi.Services.Interfaces;
 using Nexi.UI.Models;
 using Avalonia.Threading;
 using System.Threading.Tasks;
 using Nexi.Data.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Nexi.UI.ViewModels
 {
@@ -15,6 +17,7 @@ namespace Nexi.UI.ViewModels
         private readonly ICommandProcessor _commandProcessor;
         private readonly IVoiceService _voiceService;
         private readonly IChatStorageService _chatStorage;
+        private readonly ILogger<ChatViewModel> _logger;
         private string _currentMessage = string.Empty;
         private bool _isVoiceModeEnabled;
         private ObservableCollection<ChatMessage> _messages;
@@ -22,11 +25,17 @@ namespace Nexi.UI.ViewModels
         private string _sessionId;
         private string _title;
 
-        public ChatViewModel(ICommandProcessor commandProcessor, IVoiceService voiceService, IChatStorageService chatStorage, string? sessionId = null)
+        public ChatViewModel(
+            ICommandProcessor commandProcessor,
+            IVoiceService voiceService,
+            IChatStorageService chatStorage,
+            ILogger<ChatViewModel> logger,
+            string? sessionId = null)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
             _chatStorage = chatStorage;
+            _logger = logger;
             _sessionId = sessionId ?? Guid.NewGuid().ToString();
             _title = "New Chat";
             Messages = new ObservableCollection<ChatMessage>();
@@ -122,19 +131,26 @@ namespace Nexi.UI.ViewModels
 
         private async Task LoadChatHistoryAsync(string sessionId)
         {
-            var session = await _chatStorage.GetSessionAsync(sessionId);
-            if (session != null)
+            try
             {
-                Title = session.Title;
-                foreach (var message in session.Messages)
+                var session = await _chatStorage.GetSessionAsync(sessionId);
+                if (session != null)
                 {
-                    Messages.Add(new ChatMessage
+                    Title = session.Title;
+                    foreach (var message in session.Messages)
                     {
-                        Content = message.Content,
-                        Timestamp = message.Timestamp,
-                        IsUser = message.IsUser
-                    });
+                        Messages.Add(new ChatMessage
+                        {
+                            Content = message.Content,
+                            Timestamp = message.Timestamp,
+                            IsUser = message.IsUser
+                        });
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading chat history");
             }
         }
 
@@ -169,6 +185,13 @@ namespace Nexi.UI.ViewModels
             if (_commandProcessor.IsCommand(input))
             {
                 response = _commandProcessor.ProcessCommand(input);
+
+                // Auto-set title if this is the first user message
+                if (Title == "New Chat" && Messages.Count <= 3)
+                {
+                    Title = input.Length > 25 ? input.Substring(0, 22) + "..." : input;
+                    await UpdateSessionTitleAsync(_sessionId, Title);
+                }
             }
             else
             {
@@ -210,8 +233,24 @@ namespace Nexi.UI.ViewModels
             }
             catch (Exception ex)
             {
-                // Handle error (maybe show in UI)
-                System.Diagnostics.Debug.WriteLine($"Error saving message: {ex}");
+                _logger.LogError(ex, "Error saving message: {Message}", ex.Message);
+            }
+        }
+
+        private async Task UpdateSessionTitleAsync(string sessionId, string title)
+        {
+            try
+            {
+                var session = await _chatStorage.GetSessionAsync(sessionId);
+                if (session != null)
+                {
+                    session.Title = title;
+                    await _chatStorage.SaveSessionAsync(session);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating session title");
             }
         }
 
