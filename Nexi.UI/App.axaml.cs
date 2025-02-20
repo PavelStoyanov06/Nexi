@@ -45,7 +45,9 @@ namespace Nexi.UI
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
-            services.AddScoped<IChatStorageService, ChatStorageService>(); // Changed to scoped
+            services.AddScoped<IChatStorageService, ChatStorageService>();
+            services.AddScoped<IAIModelService, AIModelService>();
+            services.AddScoped<IUserSettingsService, UserSettingsService>();
             services.AddSingleton<MainViewModel>();
             services.AddTransient<ChatHistoryViewModel>();
             services.AddTransient<ChatViewModel>();

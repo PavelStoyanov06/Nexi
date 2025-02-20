@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nexi.Data.Context;
 
@@ -11,9 +12,11 @@ using Nexi.Data.Context;
 namespace Nexi.Data.Migrations
 {
     [DbContext(typeof(NexiDbContext))]
-    partial class NexiDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250220211319_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
