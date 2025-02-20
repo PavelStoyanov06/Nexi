@@ -11,8 +11,8 @@ using Avalonia.Themes.Fluent;
 using System;
 using Nexi.Data.Models;
 using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore;
 using Nexi.Data.Context;
+using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
 
 namespace Nexi.UI
@@ -35,8 +35,8 @@ namespace Nexi.UI
             // Add logging
             services.AddLogging(configure =>
             {
-                configure.AddDebug();
-                configure.AddConsole();
+                configure.AddDebug(); // Logs to debug output window
+                configure.AddConsole(); // Logs to console
             });
 
             // Add DbContext
@@ -74,8 +74,10 @@ namespace Nexi.UI
             services.AddTransient(provider => {
                 var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var voiceService = provider.GetRequiredService<IVoiceService>();
                 var logger = provider.GetRequiredService<ILogger<SettingsViewModel>>();
-                return new SettingsViewModel(userSettingsService, aiModelService, logger);
+                var chatStorageService = provider.GetRequiredService<IChatStorageService>();
+                return new SettingsViewModel(userSettingsService, aiModelService, voiceService, logger, chatStorageService);
             });
 
             services.AddTransient(provider => {
@@ -94,7 +96,7 @@ namespace Nexi.UI
             AvaloniaXamlLoader.Load(this);
         }
 
-        public override async void OnFrameworkInitializationCompleted()
+        public override void OnFrameworkInitializationCompleted()
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -105,21 +107,22 @@ namespace Nexi.UI
                 };
 
                 // Load and apply user settings on startup
-                await LoadAndApplyUserSettingsAsync();
+                LoadAndApplyUserSettingsSync();
             }
 
             base.OnFrameworkInitializationCompleted();
         }
 
-        private async Task LoadAndApplyUserSettingsAsync()
+        private void LoadAndApplyUserSettingsSync()
         {
             try
             {
                 // Get the user settings service
                 var userSettingsService = Services.GetRequiredService<IUserSettingsService>();
+                var voiceService = Services.GetRequiredService<IVoiceService>();
 
-                // Load settings
-                var settings = await userSettingsService.GetSettingsAsync();
+                // Load settings synchronously
+                var settings = userSettingsService.GetSettingsAsync().GetAwaiter().GetResult();
 
                 // Apply theme
                 UpdateTheme(settings.SelectedTheme);
@@ -127,7 +130,15 @@ namespace Nexi.UI
                 // Apply accent color
                 UpdateAccentColor(settings.UseSystemAccent);
 
-                // Here you could apply other global settings as needed
+                // Apply voice settings
+                voiceService.UpdateInputDeviceAsync(
+                    settings.SelectedInputDevice ?? "Default",
+                    settings.InputSensitivity
+                ).GetAwaiter().GetResult();
+
+                var logger = Services.GetRequiredService<ILogger<App>>();
+                logger.LogInformation("Settings applied at startup: Theme={Theme}, InputDevice={Device}, Sensitivity={Sensitivity}",
+                    settings.SelectedTheme, settings.SelectedInputDevice, settings.InputSensitivity);
             }
             catch (Exception ex)
             {

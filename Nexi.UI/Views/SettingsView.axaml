@@ -52,10 +52,13 @@
             <StackPanel Spacing="16">
               <ComboBox SelectedIndex="{CompiledBinding SelectedModelIndex}"
                       Width="300"
+                      ItemsSource="{CompiledBinding AvailableModels}"
                       HorizontalAlignment="Left">
-                <ComboBoxItem>LLaMA 7B</ComboBoxItem>
-                <ComboBoxItem>Mistral 7B</ComboBoxItem>
-                <ComboBoxItem>LLaMA 13B</ComboBoxItem>
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{CompiledBinding Name}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
               </ComboBox>
 
               <CheckBox Content="Use GPU Acceleration"
@@ -83,10 +86,9 @@
 
             <StackPanel Spacing="16">
               <ComboBox SelectedIndex="{CompiledBinding SelectedInputDeviceIndex}"
+                      ItemsSource="{CompiledBinding InputDevices}"
                       Width="300"
                       HorizontalAlignment="Left">
-                <ComboBoxItem>Default Microphone</ComboBoxItem>
-                <ComboBoxItem>Headset Microphone</ComboBoxItem>
               </ComboBox>
 
               <StackPanel Spacing="8">
@@ -97,6 +99,17 @@
                         Maximum="100"
                         Width="300"
                         HorizontalAlignment="Left"/>
+              </StackPanel>
+
+              <!-- Voice Test Section -->
+              <StackPanel Spacing="8" Margin="0,16,0,0">
+                <Button Content="Test Voice Settings"
+                        Command="{CompiledBinding TestVoiceCommand}"
+                        Width="200"
+                        HorizontalAlignment="Left"/>
+                <TextBlock Text="{CompiledBinding VoiceTestStatus}"
+                         TextWrapping="Wrap"
+                         Margin="0,8,0,0"/>
               </StackPanel>
             </StackPanel>
           </StackPanel>
@@ -141,7 +154,36 @@
                          Content="Use System Accent Color"/>
               </StackPanel>
             </StackPanel>
-           </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Diagnostics Section -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="Bug"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="Diagnostics"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+
+            <TextBlock Text="{CompiledBinding DiagnosticInfo}"
+                      TextWrapping="Wrap"
+                      Margin="0,8,0,0"/>
+
+            <Button Content="Verify Database"
+                    Command="{CompiledBinding VerifyDatabaseCommand}"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    Margin="0,16,0,0"/>
+          </StackPanel>
         </Border>
       </StackPanel>
     </ScrollViewer>

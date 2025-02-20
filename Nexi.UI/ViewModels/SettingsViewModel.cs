@@ -9,13 +9,19 @@ using Nexi.Services.Interfaces;
 using Avalonia.Styling;
 using Microsoft.Extensions.Logging;
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
+using System.Threading;
+using Nexi.Services;
+using System.Linq;
 
 namespace Nexi.UI.ViewModels
 {
     public class SettingsViewModel : ViewModelBase
     {
         private readonly IUserSettingsService _userSettingsService;
+        private readonly IChatStorageService _chatStorageService;
         private readonly IAIModelService _aiModelService;
+        private readonly IVoiceService _voiceService;
         private readonly ILogger<SettingsViewModel> _logger;
 
         private int _selectedModelIndex;
@@ -26,21 +32,32 @@ namespace Nexi.UI.ViewModels
         private bool _useSystemAccent = true;
         private string? _selectedModelId;
         private ObservableCollection<AIModelData> _availableModels;
+        private ObservableCollection<string> _inputDevices;
         private bool _isLoading = false;
+        private Timer? _sensitivityDebounceTimer;
+        private string _voiceTestStatus = "Not tested";
+        private string _diagnosticInfo = "Loading...";
 
         public SettingsViewModel(
             IUserSettingsService userSettingsService,
             IAIModelService aiModelService,
-            ILogger<SettingsViewModel> logger)
+            IVoiceService voiceService,
+            ILogger<SettingsViewModel> logger,
+            IChatStorageService chatStorageService)
         {
             _userSettingsService = userSettingsService;
             _aiModelService = aiModelService;
+            _voiceService = voiceService;
             _logger = logger;
+            _chatStorageService = chatStorageService;
 
             _availableModels = new ObservableCollection<AIModelData>();
+            _inputDevices = new ObservableCollection<string>();
 
             // Initialize commands
             SaveSettingsCommand = ReactiveCommand.CreateFromTask(SaveSettingsAsync);
+            TestVoiceCommand = ReactiveCommand.CreateFromTask(TestVoiceSettingsAsync);
+            VerifyDatabaseCommand = ReactiveCommand.CreateFromTask(VerifyDatabaseAsync);
 
             // Subscribe to property changes
             this.WhenAnyValue(x => x.SelectedTheme)
@@ -63,13 +80,6 @@ namespace Nexi.UI.ViewModels
                     await _userSettingsService.UpdateUseGPUAsync(useGPU);
                 });
 
-            this.WhenAnyValue(x => x.InputSensitivity)
-                .Throttle(TimeSpan.FromMilliseconds(500))
-                .Skip(1)
-                .Subscribe(async sensitivity => {
-                    await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)sensitivity);
-                });
-
             // Load settings
             _ = LoadSettingsAsync();
         }
@@ -80,10 +90,28 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _availableModels, value);
         }
 
+        public ObservableCollection<string> InputDevices
+        {
+            get => _inputDevices;
+            set => this.RaiseAndSetIfChanged(ref _inputDevices, value);
+        }
+
         public bool IsLoading
         {
             get => _isLoading;
             set => this.RaiseAndSetIfChanged(ref _isLoading, value);
+        }
+
+        public string VoiceTestStatus
+        {
+            get => _voiceTestStatus;
+            set => this.RaiseAndSetIfChanged(ref _voiceTestStatus, value);
+        }
+
+        public string DiagnosticInfo
+        {
+            get => _diagnosticInfo;
+            private set => this.RaiseAndSetIfChanged(ref _diagnosticInfo, value);
         }
 
         public int SelectedModelIndex
@@ -113,16 +141,28 @@ namespace Nexi.UI.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _selectedInputDeviceIndex, value);
-                // Map index to actual device name
-                _selectedInputDevice = value == 0 ? "Default" : "Headset";
-                _ = _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)InputSensitivity);
+                if (value >= 0 && value < InputDevices.Count)
+                {
+                    _selectedInputDevice = InputDevices[value];
+                    // Apply the change to voice service
+                    _ = ApplyVoiceSettingsAsync();
+                }
             }
         }
 
         public double InputSensitivity
         {
             get => _inputSensitivity;
-            set => this.RaiseAndSetIfChanged(ref _inputSensitivity, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _inputSensitivity, value);
+                // Debounce the sensitivity changes
+                _sensitivityDebounceTimer?.Dispose();
+                _sensitivityDebounceTimer = new Timer(_ =>
+                {
+                    Dispatcher.UIThread.Post(() => ApplyVoiceSettingsAsync());
+                }, null, 500, Timeout.Infinite);
+            }
         }
 
         // Theme properties
@@ -141,6 +181,39 @@ namespace Nexi.UI.ViewModels
         }
 
         public ICommand SaveSettingsCommand { get; }
+        public ICommand TestVoiceCommand { get; }
+        public ICommand VerifyDatabaseCommand { get; }
+
+        private async Task LoadVoiceDevicesAsync()
+        {
+            try
+            {
+                var devices = _voiceService.GetAvailableInputDevices();
+                InputDevices.Clear();
+
+                foreach (var device in devices)
+                {
+                    InputDevices.Add(device);
+                }
+
+                // If the selected device exists in the list, select it
+                if (!string.IsNullOrEmpty(_selectedInputDevice))
+                {
+                    for (int i = 0; i < InputDevices.Count; i++)
+                    {
+                        if (InputDevices[i] == _selectedInputDevice)
+                        {
+                            SelectedInputDeviceIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading input devices");
+            }
+        }
 
         private async Task LoadSettingsAsync()
         {
@@ -157,10 +230,8 @@ namespace Nexi.UI.ViewModels
                 _selectedModelId = settings.SelectedModelId;
                 _selectedInputDevice = settings.SelectedInputDevice;
 
-                if (settings.SelectedInputDevice == "Default")
-                    _selectedInputDeviceIndex = 0;
-                else if (settings.SelectedInputDevice == "Headset")
-                    _selectedInputDeviceIndex = 1;
+                // Load voice devices
+                await LoadVoiceDevicesAsync();
 
                 // Load AI models
                 var models = await _aiModelService.GetAllModelsAsync();
@@ -184,6 +255,17 @@ namespace Nexi.UI.ViewModels
                     }
                 }
 
+                // Add diagnostic information
+                var allSessions = await _chatStorageService.GetAllSessionsAsync();
+
+                DiagnosticInfo = $"Database Status:\n" +
+                    $"• Settings Record: Found\n" +
+                    $"• Chat Sessions: {allSessions.Count()} stored\n" +
+                    $"• AI Models: {models.Count()} configured\n" +
+                    $"• Current Theme: {_selectedTheme}\n" +
+                    $"• Selected Device: {_selectedInputDevice ?? "None"}\n" +
+                    $"• Sensitivity: {_inputSensitivity}";
+
                 // Update UI with loaded settings
                 this.RaisePropertyChanged(nameof(SelectedTheme));
                 this.RaisePropertyChanged(nameof(UseSystemAccent));
@@ -191,14 +273,136 @@ namespace Nexi.UI.ViewModels
                 this.RaisePropertyChanged(nameof(InputSensitivity));
                 this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
                 this.RaisePropertyChanged(nameof(SelectedModelIndex));
+                this.RaisePropertyChanged(nameof(InputDevices));
+                this.RaisePropertyChanged(nameof(DiagnosticInfo));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading settings");
+                DiagnosticInfo = $"Error: {ex.Message}";
+                this.RaisePropertyChanged(nameof(DiagnosticInfo));
             }
             finally
             {
                 IsLoading = false;
+            }
+        }
+
+        private async Task ApplyVoiceSettingsAsync()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_selectedInputDevice))
+                {
+                    // Update voice service with new settings
+                    await _voiceService.UpdateInputDeviceAsync(_selectedInputDevice, (int)_inputSensitivity);
+
+                    // Save to database
+                    await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)_inputSensitivity);
+
+                    _logger.LogInformation("Applied voice settings: Device={Device}, Sensitivity={Sensitivity}",
+                        _selectedInputDevice, (int)_inputSensitivity);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying voice settings");
+            }
+        }
+
+        private async Task TestVoiceSettingsAsync()
+        {
+            try
+            {
+                VoiceTestStatus = "Testing voice recognition...";
+
+                // Test if service is properly configured
+                if (_voiceService.IsListening)
+                {
+                    await _voiceService.StopListeningAsync();
+                    VoiceTestStatus = "Stopped listening to restart with new settings...";
+                    await Task.Delay(500);
+                }
+
+                // Start listening
+                await _voiceService.StartListeningAsync();
+                VoiceTestStatus = "Listening for 5 seconds... Say something!";
+
+                // Set up a temporary event handler for the test
+                EventHandler<string> tempHandler = (s, text) => {
+                    Dispatcher.UIThread.Post(() => {
+                        VoiceTestStatus = $"Recognized: \"{text}\" (Settings working!)";
+                    });
+                };
+
+                _voiceService.SpeechRecognized += tempHandler;
+
+                // Listen for a few seconds
+                await Task.Delay(5000);
+
+                // Clean up
+                _voiceService.SpeechRecognized -= tempHandler;
+                await _voiceService.StopListeningAsync();
+
+                if (VoiceTestStatus.StartsWith("Listening"))
+                {
+                    VoiceTestStatus = "No speech detected in 5 seconds. Try adjusting sensitivity or check your microphone.";
+                }
+            }
+            catch (Exception ex)
+            {
+                VoiceTestStatus = $"Error: {ex.Message}";
+                _logger.LogError(ex, "Error during voice test");
+            }
+        }
+
+        private async Task VerifyDatabaseAsync()
+        {
+            try
+            {
+                DiagnosticInfo = "Testing database connectivity...";
+                this.RaisePropertyChanged(nameof(DiagnosticInfo));
+
+                // Test settings retrieval
+                var settings = await _userSettingsService.GetSettingsAsync();
+
+                // Test chat storage
+                var sessions = await _chatStorageService.GetAllSessionsAsync();
+
+                // Test model listing
+                var models = await _aiModelService.GetAllModelsAsync();
+
+                // Create a test session and message
+                var testSession = await _chatStorageService.CreateSessionAsync("Test Session");
+                await _chatStorageService.AddMessageAsync(testSession.Id, new Nexi.Data.Models.ChatMessageData
+                {
+                    Content = "Test message",
+                    IsUser = true,
+                    Timestamp = DateTime.Now
+                });
+
+                // Retrieve and verify
+                var retrievedSession = await _chatStorageService.GetSessionAsync(testSession.Id);
+                var success = retrievedSession != null && retrievedSession.Messages.Count > 0;
+
+                // Clean up test data
+                await _chatStorageService.DeleteSessionAsync(testSession.Id);
+
+                DiagnosticInfo = $"Database Test Results:\n" +
+                    $"• Settings Table: {(settings != null ? "✓" : "✗")}\n" +
+                    $"• Chat Sessions: {sessions.Count()} found\n" +
+                    $"• AI Models: {models.Count()} found\n" +
+                    $"• Create/Read Test: {(success ? "✓" : "✗")}\n" +
+                    $"• Last operation: {DateTime.Now:HH:mm:ss}";
+            }
+            catch (Exception ex)
+            {
+                DiagnosticInfo = $"Database Error: {ex.Message}";
+                _logger.LogError(ex, "Database verification failed");
+            }
+            finally
+            {
+                this.RaisePropertyChanged(nameof(DiagnosticInfo));
             }
         }
 
@@ -217,6 +421,7 @@ namespace Nexi.UI.ViewModels
                 };
 
                 await _userSettingsService.UpdateSettingsAsync(settings);
+                _logger.LogInformation("Settings saved successfully");
             }
             catch (Exception ex)
             {
@@ -232,6 +437,12 @@ namespace Nexi.UI.ViewModels
         private void UpdateAccentColor(bool useSystem)
         {
             App.UpdateAccentColor(useSystem);
+        }
+
+        public override void Dispose()
+        {
+            _sensitivityDebounceTimer?.Dispose();
+            base.Dispose();
         }
     }
 }
