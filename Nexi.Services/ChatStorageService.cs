@@ -8,17 +8,18 @@ namespace Nexi.Services
 {
     public class ChatStorageService : IChatStorageService
     {
-        private readonly NexiDbContext _context;
+        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<ChatStorageService> _logger;
 
-        public ChatStorageService(NexiDbContext context, ILogger<ChatStorageService> logger)
+        public ChatStorageService(IDbContextFactory<NexiDbContext> contextFactory, ILogger<ChatStorageService> logger)
         {
-            _context = context;
+            _contextFactory = contextFactory;
             _logger = logger;
         }
 
         public async Task<ChatSession> CreateSessionAsync(string title)
         {
+            using var context = await _contextFactory.CreateDbContextAsync();
             var session = new ChatSession
             {
                 Title = title,
@@ -26,21 +27,23 @@ namespace Nexi.Services
                 LastModifiedAt = DateTime.UtcNow
             };
 
-            _context.ChatSessions.Add(session);
-            await _context.SaveChangesAsync();
+            context.ChatSessions.Add(session);
+            await context.SaveChangesAsync();
             return session;
         }
 
         public async Task<ChatSession?> GetSessionAsync(string id)
         {
-            return await _context.ChatSessions
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.ChatSessions
                 .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == id);
         }
 
         public async Task<IEnumerable<ChatSession>> GetAllSessionsAsync()
         {
-            return await _context.ChatSessions
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.ChatSessions
                 .Include(s => s.Messages)
                 .OrderByDescending(s => s.LastModifiedAt)
                 .ToListAsync();
@@ -48,8 +51,9 @@ namespace Nexi.Services
 
         public async Task<IEnumerable<ChatSession>> SearchSessionsAsync(string query)
         {
+            using var context = await _contextFactory.CreateDbContextAsync();
             query = query.ToLower();
-            return await _context.ChatSessions
+            return await context.ChatSessions
                 .Include(s => s.Messages)
                 .Where(s =>
                     s.Title.ToLower().Contains(query) ||
@@ -60,23 +64,26 @@ namespace Nexi.Services
 
         public async Task SaveSessionAsync(ChatSession session)
         {
-            _context.Entry(session).State = EntityState.Modified;
-            await _context.SaveChangesAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            context.Entry(session).State = EntityState.Modified;
+            await context.SaveChangesAsync();
         }
 
         public async Task DeleteSessionAsync(string id)
         {
-            var session = await _context.ChatSessions.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var session = await context.ChatSessions.FindAsync(id);
             if (session != null)
             {
-                _context.ChatSessions.Remove(session);
-                await _context.SaveChangesAsync();
+                context.ChatSessions.Remove(session);
+                await context.SaveChangesAsync();
             }
         }
 
         public async Task<ChatSession> AddMessageAsync(string sessionId, ChatMessageData message)
         {
-            var session = await _context.ChatSessions
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var session = await context.ChatSessions
                 .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == sessionId);
 
@@ -87,7 +94,7 @@ namespace Nexi.Services
             session.Messages.Add(message);
             session.LastModifiedAt = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             return session;
         }
 
@@ -95,8 +102,9 @@ namespace Nexi.Services
         {
             try
             {
-                await _context.Database.ExecuteSqlRawAsync("DELETE FROM ChatMessages");
-                await _context.Database.ExecuteSqlRawAsync("DELETE FROM ChatSessions");
+                using var context = await _contextFactory.CreateDbContextAsync();
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM ChatMessages");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM ChatSessions");
                 return true;
             }
             catch (Exception ex)

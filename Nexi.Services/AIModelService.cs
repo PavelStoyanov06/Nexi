@@ -8,30 +8,33 @@ namespace Nexi.Services
 {
     public class AIModelService : IAIModelService
     {
-        private readonly NexiDbContext _context;
+        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<AIModelService> _logger;
 
-        public AIModelService(NexiDbContext context, ILogger<AIModelService> logger)
+        public AIModelService(IDbContextFactory<NexiDbContext> contextFactory, ILogger<AIModelService> logger)
         {
-            _context = context;
+            _contextFactory = contextFactory;
             _logger = logger;
         }
 
         public async Task<IEnumerable<AIModelData>> GetAllModelsAsync()
         {
-            return await _context.AIModels
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.AIModels
                 .OrderBy(m => m.Name)
                 .ToListAsync();
         }
 
         public async Task<AIModelData?> GetModelAsync(string id)
         {
-            return await _context.AIModels.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.AIModels.FindAsync(id);
         }
 
         public async Task<AIModelData> UpdateModelStatusAsync(string id, ModelStatus status)
         {
-            var model = await _context.AIModels.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var model = await context.AIModels.FindAsync(id);
             if (model == null)
                 throw new KeyNotFoundException($"Model {id} not found");
 
@@ -41,33 +44,39 @@ namespace Nexi.Services
             if (status == ModelStatus.Downloaded && !model.DownloadedDate.HasValue)
                 model.DownloadedDate = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             return model;
         }
 
         public async Task<bool> DeleteModelAsync(string id)
         {
-            var model = await _context.AIModels.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var model = await context.AIModels.FindAsync(id);
             if (model == null)
                 return false;
 
             // Here you would add logic to delete the actual model files
 
-            _context.AIModels.Remove(model);
-            await _context.SaveChangesAsync();
+            model.Status = ModelStatus.NotDownloaded;
+            model.DownloadedDate = null;
+            model.LocalPath = null;
+            model.LastModifiedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return true;
         }
 
         public async Task<AIModelData> StartDownloadModelAsync(string id)
         {
-            var model = await _context.AIModels.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var model = await context.AIModels.FindAsync(id);
             if (model == null)
                 throw new KeyNotFoundException($"Model {id} not found");
 
             // Set status to downloading
             model.Status = ModelStatus.Downloading;
             model.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
             // Here you would initiate a real download process, 
             // perhaps using a background service

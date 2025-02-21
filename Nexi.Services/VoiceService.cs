@@ -95,12 +95,10 @@ namespace Nexi.Services
             {
                 _recognizer = new SpeechRecognitionEngine();
 
-                // Create a simple grammar for commands
+                // Create a simple grammar for commands - use fewer commands for now
                 var choices = new Choices(new string[] {
-                    "minimize", "maximize", "restore",
-                    "open browser", "open calculator",
-                    "time", "help"
-                });
+            "help", "time"
+        });
 
                 var grammarBuilder = new GrammarBuilder(choices);
                 var grammar = new Grammar(grammarBuilder);
@@ -110,13 +108,13 @@ namespace Nexi.Services
                 _recognizer.SetInputToDefaultAudioDevice();
 
                 // Calculate initial confidence threshold based on sensitivity
-                _minConfidenceThreshold = 0.8 - (_inputSensitivity / 100.0 * 0.4);
+                _minConfidenceThreshold = 0.6; // Start with a fixed value
                 _logger.LogInformation("Speech recognition initialized with confidence threshold {Threshold}", _minConfidenceThreshold);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to initialize speech recognition");
-                throw;
+                _logger.LogError(ex, "Failed to initialize speech recognition - continuing without voice support");
+                // Don't throw - allow app to run without speech
             }
         }
 
@@ -207,10 +205,48 @@ namespace Nexi.Services
                 {
                     if (_recognizer != null)
                     {
-                        _recognizer.RecognizeAsyncStop();
-                        _recognizer.Dispose();
+                        if (_isListening)
+                        {
+                            try
+                            {
+                                _recognizer.RecognizeAsyncStop();
+                                _isListening = false;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error stopping recognition during disposal");
+                            }
+                        }
+
+                        try
+                        {
+                            _recognizer.SpeechRecognized -= Recognizer_SpeechRecognized;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error removing event handler during disposal");
+                        }
+
+                        try
+                        {
+                            _recognizer.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error disposing recognizer");
+                        }
+
+                        _recognizer = null;
                     }
-                    _stateLock.Dispose();
+
+                    try
+                    {
+                        _stateLock.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error disposing state lock");
+                    }
                 }
                 catch (Exception ex)
                 {
