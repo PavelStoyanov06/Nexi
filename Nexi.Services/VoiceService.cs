@@ -14,10 +14,12 @@ namespace Nexi.Services
         private SpeechRecognitionEngine? _recognizer;
         private bool _isListening;
         private readonly SemaphoreSlim _stateLock = new(1, 1);
+        private readonly SemaphoreSlim _disposeLock = new(1, 1);
         private bool _disposed;
         private string _selectedInputDevice = "Default";
         private int _inputSensitivity = 50;
         private double _minConfidenceThreshold = 0.6;
+        private CancellationTokenSource? _listeningCts;
 
         public event EventHandler<string>? SpeechRecognized;
         public bool IsListening => _isListening;
@@ -49,6 +51,11 @@ namespace Nexi.Services
 
         public async Task UpdateInputDeviceAsync(string deviceName, int sensitivity)
         {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(VoiceService));
+            }
+
             await _stateLock.WaitAsync();
             try
             {
@@ -57,25 +64,25 @@ namespace Nexi.Services
                 // Stop listening if currently active
                 if (wasListening)
                 {
-                    _recognizer?.RecognizeAsyncStop();
-                    _isListening = false;
+                    await StopListeningInternalAsync();
                 }
 
                 _selectedInputDevice = deviceName;
                 _inputSensitivity = sensitivity;
 
-                // In a real implementation, you would select the specific device
-                // For now, just update the confidence threshold based on sensitivity
-                _minConfidenceThreshold = 0.8 - (sensitivity / 100.0 * 0.4); // Scale from 0.4 to 0.8
+                // Update confidence threshold based on sensitivity
+                _minConfidenceThreshold = 0.8 - (sensitivity / 100.0 * 0.4);
 
                 _logger.LogInformation("Updated input device to {DeviceName} with sensitivity {Sensitivity} (threshold: {Threshold})",
                     deviceName, sensitivity, _minConfidenceThreshold);
 
+                // Re-initialize speech recognition
+                InitializeSpeechRecognition();
+
                 // Resume listening if it was active before
                 if (wasListening)
                 {
-                    _recognizer?.RecognizeAsync(RecognizeMode.Multiple);
-                    _isListening = true;
+                    await StartListeningInternalAsync();
                 }
             }
             catch (Exception ex)
@@ -93,12 +100,20 @@ namespace Nexi.Services
         {
             try
             {
+                if (_recognizer != null)
+                {
+                    _recognizer.SpeechRecognized -= Recognizer_SpeechRecognized;
+                    _recognizer.Dispose();
+                }
+
                 _recognizer = new SpeechRecognitionEngine();
 
-                // Create a simple grammar for commands - use fewer commands for now
+                // Create a simple grammar for commands
                 var choices = new Choices(new string[] {
-            "help", "time"
-        });
+                    "minimize", "maximize", "restore",
+                    "open browser", "open calculator",
+                    "time", "help"
+                });
 
                 var grammarBuilder = new GrammarBuilder(choices);
                 var grammar = new Grammar(grammarBuilder);
@@ -107,19 +122,23 @@ namespace Nexi.Services
                 _recognizer.SpeechRecognized += Recognizer_SpeechRecognized;
                 _recognizer.SetInputToDefaultAudioDevice();
 
-                // Calculate initial confidence threshold based on sensitivity
-                _minConfidenceThreshold = 0.6; // Start with a fixed value
-                _logger.LogInformation("Speech recognition initialized with confidence threshold {Threshold}", _minConfidenceThreshold);
+                _logger.LogInformation("Speech recognition initialized with confidence threshold {Threshold}",
+                    _minConfidenceThreshold);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to initialize speech recognition - continuing without voice support");
-                // Don't throw - allow app to run without speech
+                _logger.LogError(ex, "Failed to initialize speech recognition");
+                throw;
             }
         }
 
         private void Recognizer_SpeechRecognized(object? sender, SpeechRecognizedEventArgs e)
         {
+            if (_disposed || _listeningCts?.IsCancellationRequested == true)
+            {
+                return;
+            }
+
             if (e.Result.Confidence > _minConfidenceThreshold)
             {
                 _logger.LogInformation("Speech recognized with confidence {Confidence}: {Text}",
@@ -135,14 +154,34 @@ namespace Nexi.Services
 
         public async Task StartListeningAsync(CancellationToken cancellationToken = default)
         {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(VoiceService));
+            }
+
             await _stateLock.WaitAsync(cancellationToken);
             try
             {
-                if (_isListening)
-                {
-                    _logger.LogWarning("Already listening");
-                    return;
-                }
+                await StartListeningInternalAsync();
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+
+        private async Task StartListeningInternalAsync()
+        {
+            if (_isListening)
+            {
+                _logger.LogWarning("Already listening");
+                return;
+            }
+
+            try
+            {
+                _listeningCts?.Dispose();
+                _listeningCts = new CancellationTokenSource();
 
                 _recognizer?.RecognizeAsync(RecognizeMode.Multiple);
                 _isListening = true;
@@ -153,15 +192,30 @@ namespace Nexi.Services
                 _logger.LogError(ex, "Error starting voice recognition");
                 throw;
             }
-            finally
-            {
-                _stateLock.Release();
-            }
         }
 
         public async Task StopListeningAsync()
         {
-            await _stateLock.WaitAsync();
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (await _disposeLock.WaitAsync(TimeSpan.FromSeconds(1)))
+            {
+                try
+                {
+                    await StopListeningInternalAsync();
+                }
+                finally
+                {
+                    _disposeLock.Release();
+                }
+            }
+        }
+
+        private async Task StopListeningInternalAsync()
+        {
             try
             {
                 if (!_isListening)
@@ -170,18 +224,17 @@ namespace Nexi.Services
                     return;
                 }
 
+                _listeningCts?.Cancel();
                 _recognizer?.RecognizeAsyncStop();
                 _isListening = false;
                 _logger.LogInformation("Stopped listening for voice commands");
+
+                await Task.Delay(100); // Short delay to ensure recognition has stopped
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error stopping voice listening");
                 throw;
-            }
-            finally
-            {
-                _stateLock.Release();
             }
         }
 
@@ -201,60 +254,62 @@ namespace Nexi.Services
         {
             if (!_disposed)
             {
-                try
+                if (_disposeLock.Wait(TimeSpan.FromSeconds(1)))
                 {
-                    if (_recognizer != null)
+                    try
                     {
-                        if (_isListening)
+                        // Cancel any ongoing listening
+                        _listeningCts?.Cancel();
+
+                        if (_recognizer != null)
                         {
                             try
                             {
-                                _recognizer.RecognizeAsyncStop();
-                                _isListening = false;
+                                if (_isListening)
+                                {
+                                    _recognizer.RecognizeAsyncStop();
+                                    _isListening = false;
+                                }
+                                _recognizer.SpeechRecognized -= Recognizer_SpeechRecognized;
+                                _recognizer.Dispose();
+                                _recognizer = null;
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogError(ex, "Error stopping recognition during disposal");
+                                _logger.LogError(ex, "Error disposing recognizer");
                             }
                         }
-
-                        try
-                        {
-                            _recognizer.SpeechRecognized -= Recognizer_SpeechRecognized;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error removing event handler during disposal");
-                        }
-
-                        try
-                        {
-                            _recognizer.Dispose();
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error disposing recognizer");
-                        }
-
-                        _recognizer = null;
                     }
-
+                    finally
+                    {
+                        _listeningCts?.Dispose();
+                        _listeningCts = null;
+                        _disposeLock.Dispose();
+                        _stateLock.Dispose();
+                        _disposed = true;
+                    }
+                }
+                else
+                {
+                    // Force cleanup if lock can't be acquired
                     try
                     {
-                        _stateLock.Dispose();
+                        _listeningCts?.Cancel();
+                        _recognizer?.Dispose();
+                        _recognizer = null;
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error disposing state lock");
+                        _logger.LogError(ex, "Error during forced cleanup");
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error disposing voice service");
-                }
-                finally
-                {
-                    _disposed = true;
+                    finally
+                    {
+                        _listeningCts?.Dispose();
+                        _listeningCts = null;
+                        _disposeLock.Dispose();
+                        _stateLock.Dispose();
+                        _disposed = true;
+                    }
                 }
             }
         }

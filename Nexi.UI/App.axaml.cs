@@ -14,7 +14,9 @@ using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
+using System.Linq;
 using Avalonia.Threading;
+using System.Threading;
 
 namespace Nexi.UI
 {
@@ -23,7 +25,8 @@ namespace Nexi.UI
         public new static App Current => (App)Application.Current!;
         private static ThemeMode _currentTheme = ThemeMode.System;
         public IServiceProvider Services { get; }
-        private bool _disposed = false;
+        private bool _disposed;
+        private readonly CancellationTokenSource _cleanupCts = new();
 
         public App()
         {
@@ -37,13 +40,13 @@ namespace Nexi.UI
             // Add logging
             services.AddLogging(configure =>
             {
-                configure.AddDebug(); // Logs to debug output window
-                configure.AddConsole(); // Logs to console
+                configure.AddDebug();
+                configure.AddConsole();
             });
 
             // Add DbContext factory
             services.AddDbContextFactory<NexiDbContext>(options =>
-                    options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
+                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
 
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
@@ -121,6 +124,86 @@ namespace Nexi.UI
             base.OnFrameworkInitializationCompleted();
         }
 
+        private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
+        {
+            CleanupResources();
+        }
+
+        private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+        {
+            try
+            {
+                // Cancel any ongoing operations
+                _cleanupCts.Cancel();
+
+                // Force cleanup with timeout
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                Task.WhenAny(CleanupAsync(), Task.Delay(3000, timeoutCts.Token))
+                    .ConfigureAwait(false)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                // Ensure we exit even if cleanup fails
+                Environment.Exit(1);
+            }
+        }
+
+        private async Task CleanupAsync()
+        {
+            try
+            {
+                // Get all disposable services
+                var disposableServices = Services.GetServices<IDisposable>();
+
+                // Create cleanup tasks for all services
+                var cleanupTasks = disposableServices.Select(service => Task.Run(() =>
+                {
+                    try
+                    {
+                        service.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore individual service cleanup failures
+                    }
+                })).ToList();
+
+                // Wait for all cleanup tasks with timeout
+                await Task.WhenAll(cleanupTasks).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+
+        private void CleanupResources()
+        {
+            try
+            {
+                // Stop voice service
+                var voiceService = Services.GetService<IVoiceService>();
+                if (voiceService != null && voiceService.IsListening)
+                {
+                    voiceService.StopListeningAsync().Wait(TimeSpan.FromSeconds(2));
+                }
+
+                // Dispose the service provider if it's disposable
+                if (Services is IDisposable disposableServices)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    Task.Run(() => disposableServices.Dispose(), cts.Token).Wait(cts.Token);
+                }
+            }
+            catch (Exception ex)
+            {
+                var logger = Services.GetService<ILogger<App>>();
+                logger?.LogError(ex, "Error during application cleanup");
+            }
+        }
+
         private async Task SafeLoadAndApplyUserSettings()
         {
             try
@@ -161,79 +244,6 @@ namespace Nexi.UI
             }
         }
 
-        // Remove the LoadAndApplyUserSettingsSync method
-
-        private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
-        {
-            // Perform cleanup before shutdown
-            CleanupResources();
-        }
-
-        private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
-        {
-            // Final cleanup on exit
-            CleanupResources();
-        }
-
-        private void CleanupResources()
-        {
-            try
-            {
-                // Stop voice service
-                var voiceService = Services.GetService<IVoiceService>();
-                if (voiceService != null && voiceService.IsListening)
-                {
-                    voiceService.StopListeningAsync().GetAwaiter().GetResult();
-                }
-
-                // Dispose the service provider if it's disposable
-                if (Services is IDisposable disposableServices)
-                {
-                    disposableServices.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                var logger = Services.GetService<ILogger<App>>();
-                logger?.LogError(ex, "Error during application cleanup");
-            }
-        }
-
-        private void LoadAndApplyUserSettingsSync()
-        {
-            try
-            {
-                // Get the user settings service
-                var userSettingsService = Services.GetRequiredService<IUserSettingsService>();
-                var voiceService = Services.GetRequiredService<IVoiceService>();
-
-                // Load settings synchronously
-                var settings = userSettingsService.GetSettingsAsync().GetAwaiter().GetResult();
-
-                // Apply theme
-                UpdateTheme(settings.SelectedTheme);
-
-                // Apply accent color
-                UpdateAccentColor(settings.UseSystemAccent);
-
-                // Apply voice settings
-                voiceService.UpdateInputDeviceAsync(
-                    settings.SelectedInputDevice ?? "Default",
-                    settings.InputSensitivity
-                ).GetAwaiter().GetResult();
-
-                var logger = Services.GetRequiredService<ILogger<App>>();
-                logger.LogInformation("Settings applied at startup: Theme={Theme}, InputDevice={Device}, Sensitivity={Sensitivity}",
-                    settings.SelectedTheme, settings.SelectedInputDevice, settings.InputSensitivity);
-            }
-            catch (Exception ex)
-            {
-                // Get logger and log the error
-                var logger = Services.GetRequiredService<ILogger<App>>();
-                logger.LogError(ex, "Error loading and applying user settings at startup");
-            }
-        }
-
         public static ThemeMode CurrentTheme
         {
             get => _currentTheme;
@@ -244,7 +254,7 @@ namespace Nexi.UI
         {
             if (Current != null)
             {
-                CurrentTheme = mode; // Store the selected theme
+                CurrentTheme = mode;
                 switch (mode)
                 {
                     case ThemeMode.Light:
@@ -280,6 +290,8 @@ namespace Nexi.UI
             {
                 if (disposing)
                 {
+                    _cleanupCts.Cancel();
+                    _cleanupCts.Dispose();
                     CleanupResources();
                 }
 
