@@ -33,13 +33,8 @@ namespace Nexi.Data.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime LastModifiedAt { get; set; } = DateTime.UtcNow;
-    }
 
-    public enum ModelStatus
-    {
-        NotDownloaded = 0,
-        Downloading = 1,
-        Downloaded = 2,
-        Error = 3
+        // Navigation property for configurations
+        public virtual ICollection<AIRequestOptions> RequestConfigurations { get; set; } = new List<AIRequestOptions>();
     }
 }

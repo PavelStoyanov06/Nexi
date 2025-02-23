@@ -49,6 +49,31 @@ namespace Nexi.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "AIRequestConfigurations",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Temperature = table.Column<decimal>(type: "decimal(3,2)", nullable: false),
+                    MaxTokens = table.Column<int>(type: "int", nullable: false),
+                    SystemPrompt = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    Provider = table.Column<int>(type: "int", nullable: false),
+                    ModelId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    LastModifiedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AIRequestConfigurations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AIRequestConfigurations_AIModels_ModelId",
+                        column: x => x.ModelId,
+                        principalTable: "AIModels",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "UserSettings",
                 columns: table => new
                 {
@@ -110,10 +135,25 @@ namespace Nexi.Data.Migrations
                 columns: new[] { "Id", "AccentColor", "InputSensitivity", "LastModifiedAt", "SelectedInputDevice", "SelectedModelId", "SelectedTheme", "UseGPU", "UseSystemAccent" },
                 values: new object[] { 1, "#A880E4", 50, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), null, null, 0, false, true });
 
+            migrationBuilder.InsertData(
+                table: "AIRequestConfigurations",
+                columns: new[] { "Id", "CreatedAt", "LastModifiedAt", "MaxTokens", "ModelId", "Provider", "SystemPrompt", "Temperature" },
+                values: new object[,]
+                {
+                    { 1, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), 1000, "llama-7b", 0, "You are a helpful AI assistant.", 0.7m },
+                    { 2, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), 1000, "mistral-7b", 0, "You are a helpful AI assistant.", 0.7m },
+                    { 3, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), 2000, "llama-13b", 0, "You are a helpful AI assistant.", 0.7m }
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_AIModels_Status",
                 table: "AIModels",
                 column: "Status");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AIRequestConfigurations_ModelId",
+                table: "AIRequestConfigurations",
+                column: "ModelId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ChatMessages_SessionId",
@@ -139,6 +179,9 @@ namespace Nexi.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "AIRequestConfigurations");
+
             migrationBuilder.DropTable(
                 name: "ChatMessages");
 

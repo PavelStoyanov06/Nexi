@@ -12,6 +12,7 @@ namespace Nexi.Data.Context
         public DbSet<ChatSession> ChatSessions { get; set; }
         public DbSet<ChatMessageData> ChatMessages { get; set; }
         public DbSet<AIModelData> AIModels { get; set; }
+        public DbSet<AIRequestOptions> AIRequestConfigurations { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -27,6 +28,16 @@ namespace Nexi.Data.Context
 
             modelBuilder.Entity<AIModelData>()
                 .HasIndex(m => m.Status);
+
+            // Configure AI Request Options
+            modelBuilder.Entity<AIRequestOptions>()
+                .HasOne(a => a.Model)
+                .WithMany(m => m.RequestConfigurations)
+                .HasForeignKey(a => a.ModelId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<AIRequestOptions>()
+                .HasIndex(a => a.ModelId);
 
             // Use a fixed date for seeding
             var seedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -77,6 +88,43 @@ namespace Nexi.Data.Context
                     Status = ModelStatus.NotDownloaded,
                     Size = "24.1 GB",
                     Version = "2.0.0",
+                    CreatedAt = seedDate,
+                    LastModifiedAt = seedDate
+                }
+            );
+
+            // Seed default AI configurations for each model
+            modelBuilder.Entity<AIRequestOptions>().HasData(
+                new AIRequestOptions
+                {
+                    Id = 1,
+                    ModelId = "llama-7b",
+                    Temperature = 0.7M,
+                    MaxTokens = 1000,
+                    SystemPrompt = "You are a helpful AI assistant.",
+                    Provider = AIProvider.Local,
+                    CreatedAt = seedDate,
+                    LastModifiedAt = seedDate
+                },
+                new AIRequestOptions
+                {
+                    Id = 2,
+                    ModelId = "mistral-7b",
+                    Temperature = 0.7M,
+                    MaxTokens = 1000,
+                    SystemPrompt = "You are a helpful AI assistant.",
+                    Provider = AIProvider.Local,
+                    CreatedAt = seedDate,
+                    LastModifiedAt = seedDate
+                },
+                new AIRequestOptions
+                {
+                    Id = 3,
+                    ModelId = "llama-13b",
+                    Temperature = 0.7M,
+                    MaxTokens = 2000,
+                    SystemPrompt = "You are a helpful AI assistant.",
+                    Provider = AIProvider.Local,
                     CreatedAt = seedDate,
                     LastModifiedAt = seedDate
                 }

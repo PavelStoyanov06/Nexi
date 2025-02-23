@@ -104,6 +104,79 @@ namespace Nexi.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nexi.Data.Models.AIRequestOptions", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastModifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MaxTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SystemPrompt")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal>("Temperature")
+                        .HasColumnType("decimal(3,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModelId");
+
+                    b.ToTable("AIRequestConfigurations");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            LastModifiedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            MaxTokens = 1000,
+                            ModelId = "llama-7b",
+                            Provider = 0,
+                            SystemPrompt = "You are a helpful AI assistant.",
+                            Temperature = 0.7m
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            LastModifiedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            MaxTokens = 1000,
+                            ModelId = "mistral-7b",
+                            Provider = 0,
+                            SystemPrompt = "You are a helpful AI assistant.",
+                            Temperature = 0.7m
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            LastModifiedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            MaxTokens = 2000,
+                            ModelId = "llama-13b",
+                            Provider = 0,
+                            SystemPrompt = "You are a helpful AI assistant.",
+                            Temperature = 0.7m
+                        });
+                });
+
             modelBuilder.Entity("Nexi.Data.Models.ChatMessageData", b =>
                 {
                     b.Property<string>("Id")
@@ -216,6 +289,17 @@ namespace Nexi.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nexi.Data.Models.AIRequestOptions", b =>
+                {
+                    b.HasOne("Nexi.Data.Models.AIModelData", "Model")
+                        .WithMany("RequestConfigurations")
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Model");
+                });
+
             modelBuilder.Entity("Nexi.Data.Models.ChatMessageData", b =>
                 {
                     b.HasOne("Nexi.Data.Models.ChatSession", "Session")
@@ -234,6 +318,11 @@ namespace Nexi.Data.Migrations
                         .HasForeignKey("SelectedModelId");
 
                     b.Navigation("SelectedModel");
+                });
+
+            modelBuilder.Entity("Nexi.Data.Models.AIModelData", b =>
+                {
+                    b.Navigation("RequestConfigurations");
                 });
 
             modelBuilder.Entity("Nexi.Data.Models.ChatSession", b =>
