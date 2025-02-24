@@ -15,6 +15,7 @@ namespace Nexi.Services.Interfaces
         Task LoadModelAsync(string modelId);
         Task UnloadModelAsync(string modelId);
         bool IsModelLoaded(string modelId);
+        Task DownloadModelAsync(string modelId, IProgress<double>? progress = null);
 
         // Settings
         Task UpdateSettingsAsync(AIRequestOptions options);

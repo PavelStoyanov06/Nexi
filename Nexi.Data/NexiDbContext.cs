@@ -14,6 +14,7 @@ namespace Nexi.Data.Context
         public DbSet<AIModelData> AIModels { get; set; }
         public DbSet<AIRequestOptions> AIRequestConfigurations { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
+        public DbSet<ModelInfo> ModelInfos { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -55,6 +56,21 @@ namespace Nexi.Data.Context
                     LastModifiedAt = seedDate
                 }
             );
+
+            modelBuilder.Entity<AIModelData>()
+                .HasIndex(m => m.Status);
+
+            // Configure ModelInfo entity
+            modelBuilder.Entity<ModelInfo>()
+                .HasIndex(m => m.Provider);
+
+            modelBuilder.Entity<ModelInfo>()
+                .Property(m => m.MetadataJson)
+                .HasColumnName("Metadata");
+
+            modelBuilder.Entity<ModelInfo>()
+                .Property(m => m.SupportedTasksJson)
+                .HasColumnName("SupportedTasks");
 
             // Seed some default AI models
             modelBuilder.Entity<AIModelData>().HasData(

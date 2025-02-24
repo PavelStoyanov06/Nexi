@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using Avalonia.Threading;
 using System.Threading;
+using Nexi.Services.AI;
 
 namespace Nexi.UI
 {
@@ -51,9 +52,11 @@ namespace Nexi.UI
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
+            services.AddSingleton<IAIService, OnnxAIService>();
             services.AddScoped<IChatStorageService, ChatStorageService>();
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
+            services.AddScoped<IModelRepository, ModelRepository>();
 
             // Register ViewModels
             services.AddSingleton<MainViewModel>();
@@ -71,8 +74,10 @@ namespace Nexi.UI
 
             services.AddTransient(provider => {
                 var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var modelRepository = provider.GetRequiredService<IModelRepository>();
+                var aiService = provider.GetRequiredService<IAIService>();
                 var logger = provider.GetRequiredService<ILogger<ModelsViewModel>>();
-                return new ModelsViewModel(aiModelService, logger);
+                return new ModelsViewModel(aiModelService, modelRepository, aiService, logger);
             });
 
             services.AddTransient(provider => {
