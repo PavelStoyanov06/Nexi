@@ -195,11 +195,6 @@ namespace Nexi.UI
             base.OnFrameworkInitializationCompleted();
         }
 
-        private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
-        {
-            CleanupResources();
-        }
-
         private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
         {
             try
@@ -250,28 +245,74 @@ namespace Nexi.UI
             }
         }
 
+        // Replace the CleanupResources method with this safer version
         private void CleanupResources()
         {
             try
             {
-                // Stop voice service
-                var voiceService = Services.GetService<IVoiceService>();
-                if (voiceService != null && voiceService.IsListening)
+                // Create a local reference to Services to avoid accessing a potentially disposed field
+                var services = Services;
+                if (services == null)
                 {
-                    voiceService.StopListeningAsync().Wait(TimeSpan.FromSeconds(2));
+                    Console.Error.WriteLine("Services was null during cleanup");
+                    return;
                 }
 
-                // Dispose the service provider if it's disposable
-                if (Services is IDisposable disposableServices)
+                try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    Task.Run(() => disposableServices.Dispose(), cts.Token).Wait(cts.Token);
+                    // Get logger from services
+                    var logger = services.GetService<ILogger<App>>();
+
+                    // Stop voice service
+                    var voiceService = services.GetService<IVoiceService>();
+                    if (voiceService != null && voiceService.IsListening)
+                    {
+                        try
+                        {
+                            voiceService.StopListeningAsync().Wait(TimeSpan.FromSeconds(2));
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogError(ex, "Error stopping voice service during cleanup");
+                        }
+                    }
+
+                    // Don't dispose the service provider here - it will be disposed automatically
+                    // when the application shuts down through its natural lifecycle.
+                }
+                catch (ObjectDisposedException)
+                {
+                    // This is expected if services were already disposed
+                    Console.WriteLine("Services already disposed during cleanup");
+                }
+                catch (Exception ex)
+                {
+                    // Use Console for logging as a fallback
+                    Console.Error.WriteLine($"Error during application cleanup: {ex.Message}");
                 }
             }
             catch (Exception ex)
             {
-                var logger = Services.GetService<ILogger<App>>();
-                logger?.LogError(ex, "Error during application cleanup");
+                // Last-resort error handling
+                Console.Error.WriteLine($"Error during cleanup: {ex.Message}");
+            }
+        }
+
+        // Replace the OnShutdownRequested method with this safer version
+        private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
+        {
+            try
+            {
+                CleanupResources();
+            }
+            catch (Exception ex)
+            {
+                // If cleanup fails, log it but allow shutdown to continue
+                var logger = Services?.GetService<ILogger<App>>();
+                logger?.LogError(ex, "Error during shutdown request cleanup");
+
+                // Fallback to console
+                Console.Error.WriteLine($"Error during shutdown request: {ex.Message}");
             }
         }
 
@@ -351,8 +392,36 @@ namespace Nexi.UI
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            if (!_disposed)
+            {
+                try
+                {
+                    // Cancel any ongoing operations
+                    _cleanupCts?.Cancel();
+
+                    // Dispose the cleanup token source
+                    _cleanupCts?.Dispose();
+
+                    // Run cleanup but catch any exceptions
+                    try
+                    {
+                        CleanupResources();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Error during dispose cleanup: {ex.Message}");
+                    }
+
+                    _disposed = true;
+                }
+                catch (Exception ex)
+                {
+                    // Last resort error handling during dispose
+                    Console.Error.WriteLine($"Error during dispose: {ex.Message}");
+                }
+
+                GC.SuppressFinalize(this);
+            }
         }
 
         protected virtual void Dispose(bool disposing)

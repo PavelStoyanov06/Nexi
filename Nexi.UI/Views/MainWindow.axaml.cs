@@ -12,6 +12,7 @@ namespace Nexi.UI.Views
     public partial class MainWindow : Window
     {
         private bool _isClosing = false;
+        private readonly CancellationTokenSource _cleanupCts = new CancellationTokenSource();
 
         public MainWindow()
         {
@@ -25,6 +26,8 @@ namespace Nexi.UI.Views
             if (!_isClosing)
             {
                 _isClosing = true;
+
+                // Run cleanup in the background without awaiting
                 Task.Run(CleanupAsync).ConfigureAwait(false);
             }
         }
@@ -39,41 +42,82 @@ namespace Nexi.UI.Views
         {
             try
             {
-                var services = App.Current?.Services;
-                if (services != null)
+                var app = App.Current;
+                if (app == null)
                 {
-                    // Stop voice service first as it's most likely to hang
-                    var voiceService = services.GetService<IVoiceService>();
-                    if (voiceService != null)
-                    {
-                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                        try
-                        {
-                            await voiceService.StopListeningAsync().WaitAsync(cts.Token);
-                            (voiceService as IDisposable)?.Dispose();
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Timeout - force disposal
-                            (voiceService as IDisposable)?.Dispose();
-                        }
-                    }
+                    return;
+                }
 
-                    // Dispose the service provider
-                    if (services is IDisposable disposableServices)
-                    {
-                        disposableServices.Dispose();
-                    }
+                var services = app.Services;
+                if (services == null)
+                {
+                    return;
+                }
 
-                    // Force exit immediately after cleanup
+                // Stop voice service first as it's most likely to hang
+                var voiceService = services.GetService<IVoiceService>();
+                if (voiceService != null)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    try
+                    {
+                        await voiceService.StopListeningAsync().WaitAsync(cts.Token);
+
+                        // Only dispose if it implements IDisposable
+                        (voiceService as IDisposable)?.Dispose();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Timeout - force disposal if possible
+                        (voiceService as IDisposable)?.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore any exceptions during cleanup
+                    }
+                }
+
+                // We'll avoid explicit disposal of the service provider here
+                // since it can lead to ObjectDisposedException when services
+                // are still being used during shutdown
+
+                // However, we can still cancel the cleanup token to signal operations to stop
+                _cleanupCts.Cancel();
+
+                // Force exit immediately after cleanup
+                try
+                {
                     Environment.Exit(0);
+                }
+                catch
+                {
+                    // Ignore - we're shutting down anyway
                 }
             }
             catch (Exception)
             {
                 // If any cleanup fails, force exit
-                Environment.Exit(1);
+                try
+                {
+                    Environment.Exit(1);
+                }
+                catch
+                {
+                    // Ignore - we're shutting down anyway
+                }
             }
+            finally
+            {
+                _cleanupCts.Dispose();
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            base.OnClosed(e);
+
+            // Make sure we dispose the cleanup token
+            _cleanupCts.Dispose();
         }
     }
 }
