@@ -1,9 +1,12 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Nexi.Services.AI
 {
@@ -11,100 +14,36 @@ namespace Nexi.Services.AI
     {
         private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<ModelRepository> _logger;
-        private readonly Dictionary<string, ModelInfo> _currentModels;
 
-        public ModelRepository(IDbContextFactory<NexiDbContext> contextFactory, ILogger<ModelRepository> logger)
+        public ModelRepository(
+            IDbContextFactory<NexiDbContext> contextFactory,
+            ILogger<ModelRepository> logger)
         {
             _contextFactory = contextFactory;
             _logger = logger;
-            _currentModels = GetOnnxModelZooModels();
-
-            // Ensure models are synced with current version
-            _ = SyncModelsAsync();
         }
 
-        private Dictionary<string, ModelInfo> GetOnnxModelZooModels()
+        public async Task<IEnumerable<ModelInfo>> GetAvailableModelsAsync()
         {
-            // These models are from the ONNX Model Zoo and don't require authentication
-            return new Dictionary<string, ModelInfo>
+            try
             {
-                ["resnet50-v1-12"] = new ModelInfo
-                {
-                    Id = "resnet50-v1-12",
-                    Name = "ResNet-50 v1",
-                    Description = "Image classification model for detecting objects in images",
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/validated/vision/classification/resnet/model/resnet50-v1-12.onnx",
-                    Size = "98MB",
-                    Version = "1.0.0",
-                    SupportedTasks = new[] { "image-classification" },
-                    Provider = AIProvider.Local,
-                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string>
-                    {
-                        ["architecture"] = "CNN",
-                        ["license"] = "MIT",
-                        ["domain"] = "vision"
-                    }),
-                    CreatedAt = DateTime.UtcNow,
-                    LastModifiedAt = DateTime.UtcNow
-                },
-                ["bertsquad-10"] = new ModelInfo
-                {
-                    Id = "bertsquad-10",
-                    Name = "BERT-SQuAD",
-                    Description = "Question answering model based on BERT",
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/validated/text/machine_comprehension/bert-squad/model/bertsquad-10.onnx",
-                    Size = "438MB",
-                    Version = "1.0.0",
-                    SupportedTasks = new[] { "question-answering" },
-                    Provider = AIProvider.Local,
-                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string>
-                    {
-                        ["architecture"] = "transformer",
-                        ["license"] = "Apache-2.0",
-                        ["domain"] = "text"
-                    }),
-                    CreatedAt = DateTime.UtcNow,
-                    LastModifiedAt = DateTime.UtcNow
-                },
-                ["ssd-12"] = new ModelInfo
-                {
-                    Id = "ssd-12",
-                    Name = "SSD Model",
-                    Description = "Single Shot MultiBox Detector for object detection",
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/validated/vision/object_detection_segmentation/ssd/model/ssd-12.onnx",
-                    Size = "77MB",
-                    Version = "1.0.0",
-                    SupportedTasks = new[] { "object-detection" },
-                    Provider = AIProvider.Local,
-                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string>
-                    {
-                        ["architecture"] = "SSD",
-                        ["license"] = "MIT",
-                        ["domain"] = "vision"
-                    }),
-                    CreatedAt = DateTime.UtcNow,
-                    LastModifiedAt = DateTime.UtcNow
-                },
-                ["gpt2-10"] = new ModelInfo
-                {
-                    Id = "gpt2-10",
-                    Name = "GPT-2",
-                    Description = "Text generation and completion model",
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/validated/text/machine_comprehension/gpt-2/model/gpt2-10.onnx",
-                    Size = "548MB",
-                    Version = "1.0.0",
-                    SupportedTasks = new[] { "text-generation", "completion" },
-                    Provider = AIProvider.Local,
-                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string>
-                    {
-                        ["architecture"] = "transformer",
-                        ["license"] = "MIT",
-                        ["domain"] = "text"
-                    }),
-                    CreatedAt = DateTime.UtcNow,
-                    LastModifiedAt = DateTime.UtcNow
-                }
-            };
+                // First sync model data between ModelInfo and AIModelData
+                await SyncModelsAsync();
+
+                using var context = await _contextFactory.CreateDbContextAsync();
+                return await context.ModelInfos.ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available models");
+                return Enumerable.Empty<ModelInfo>();
+            }
+        }
+
+        public async Task<ModelInfo> GetModelInfoAsync(string modelId)
+        {
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.ModelInfos.FirstOrDefaultAsync(m => m.Id == modelId);
         }
 
         private async Task SyncModelsAsync()
@@ -113,277 +52,194 @@ namespace Nexi.Services.AI
             {
                 using var context = await _contextFactory.CreateDbContextAsync();
 
-                // Get existing models from database
-                var existingModelInfos = await context.ModelInfos.ToListAsync();
-                var existingAiModels = await context.AIModels.ToListAsync();
+                // Get all model infos and AI model data
+                var modelInfos = await context.ModelInfos.ToListAsync();
+                var aiModels = await context.AIModels.ToListAsync();
 
                 _logger.LogInformation("Syncing models. Found {ModelInfoCount} ModelInfo and {AIModelCount} AIModelData entries",
-                    existingModelInfos.Count, existingAiModels.Count);
+                    modelInfos.Count, aiModels.Count);
 
-                // Remove obsolete models (not in the current models dictionary)
-                foreach (var modelInfo in existingModelInfos)
+                // Ensure each ModelInfo has a corresponding AIModelData entry
+                foreach (var modelInfo in modelInfos)
                 {
-                    if (!_currentModels.ContainsKey(modelInfo.Id))
-                    {
-                        context.ModelInfos.Remove(modelInfo);
-                        _logger.LogInformation("Removing obsolete ModelInfo: {ModelId}", modelInfo.Id);
-                    }
-                }
+                    var aiModel = aiModels.FirstOrDefault(m => m.Id == modelInfo.Id);
 
-                foreach (var aiModel in existingAiModels)
-                {
-                    if (!_currentModels.ContainsKey(aiModel.Id))
+                    if (aiModel == null)
                     {
-                        context.AIModels.Remove(aiModel);
-                        _logger.LogInformation("Removing obsolete AIModelData: {ModelId}", aiModel.Id);
-                    }
-                }
-
-                // Add new models and update existing ones
-                foreach (var (id, currentModel) in _currentModels)
-                {
-                    // Check if ModelInfo exists
-                    var existingModelInfo = existingModelInfos.FirstOrDefault(m => m.Id == id);
-                    if (existingModelInfo == null)
-                    {
-                        // Add new ModelInfo
-                        context.ModelInfos.Add(currentModel);
-                        _logger.LogInformation("Adding new ModelInfo: {ModelId}", id);
-                    }
-                    else
-                    {
-                        // Update existing ModelInfo
-                        existingModelInfo.Name = currentModel.Name;
-                        existingModelInfo.Description = currentModel.Description;
-                        existingModelInfo.DownloadUrl = currentModel.DownloadUrl;
-                        existingModelInfo.Size = currentModel.Size;
-                        existingModelInfo.Version = currentModel.Version;
-                        existingModelInfo.SupportedTasksJson = string.Join(",", currentModel.SupportedTasks);
-                        existingModelInfo.MetadataJson = currentModel.MetadataJson;
-                        existingModelInfo.LastModifiedAt = DateTime.UtcNow;
-                        _logger.LogInformation("Updating existing ModelInfo: {ModelId}", id);
-                    }
-
-                    // Check if AIModelData exists
-                    var existingAiModel = existingAiModels.FirstOrDefault(m => m.Id == id);
-                    if (existingAiModel == null)
-                    {
-                        // Add new AIModelData
-                        var aiModelData = new AIModelData
+                        // Create new AIModelData for this ModelInfo
+                        aiModel = new AIModelData
                         {
-                            Id = id,
-                            Name = currentModel.Name,
-                            Description = currentModel.Description,
+                            Id = modelInfo.Id,
+                            Name = modelInfo.Name,
+                            Description = modelInfo.Description,
+                            Version = modelInfo.Version,
+                            Size = modelInfo.Size,
                             Status = ModelStatus.NotDownloaded,
-                            Size = currentModel.Size,
-                            Version = currentModel.Version,
                             CreatedAt = DateTime.UtcNow,
                             LastModifiedAt = DateTime.UtcNow
                         };
 
-                        context.AIModels.Add(aiModelData);
-                        _logger.LogInformation("Adding new AIModelData: {ModelId}", id);
+                        context.AIModels.Add(aiModel);
+                        _logger.LogInformation("Created new AIModelData for {ModelId}", modelInfo.Id);
                     }
                     else
                     {
-                        // Update AIModelData but preserve status
-                        existingAiModel.Name = currentModel.Name;
-                        existingAiModel.Description = currentModel.Description;
-                        existingAiModel.Size = currentModel.Size;
-                        existingAiModel.Version = currentModel.Version;
-                        existingAiModel.LastModifiedAt = DateTime.UtcNow;
-                        _logger.LogInformation("Updating existing AIModelData: {ModelId}", id);
+                        // Update existing AIModelData with latest ModelInfo data
+                        _logger.LogInformation("Updating existing ModelInfo: {ModelId}", modelInfo.Id);
+                        aiModel = await context.AIModels.FindAsync(modelInfo.Id);
+
+                        // Only update these fields if the model isn't already downloaded
+                        if (aiModel.Status != ModelStatus.Downloaded)
+                        {
+                            aiModel.Name = modelInfo.Name;
+                            aiModel.Description = modelInfo.Description;
+                            aiModel.Version = modelInfo.Version;
+                            aiModel.Size = modelInfo.Size;
+                        }
+
+                        aiModel.LastModifiedAt = DateTime.UtcNow;
+                        _logger.LogInformation("Updating existing AIModelData: {ModelId}", modelInfo.Id);
                     }
                 }
 
-                // Save changes
+                // Ensure each AIModelData has a corresponding ModelInfo entry
+                // (this might happen if models are added directly to the AIModels table)
+                foreach (var aiModel in aiModels)
+                {
+                    var modelInfo = modelInfos.FirstOrDefault(m => m.Id == aiModel.Id);
+
+                    if (modelInfo == null)
+                    {
+                        // Create new ModelInfo for this AIModelData
+                        modelInfo = new ModelInfo
+                        {
+                            Id = aiModel.Id,
+                            Name = aiModel.Name,
+                            Description = aiModel.Description,
+                            Version = aiModel.Version,
+                            Size = aiModel.Size,
+                            Provider = AIProvider.Local,
+                            DownloadUrl = string.Empty,
+                            CreatedAt = DateTime.UtcNow,
+                            LastModifiedAt = DateTime.UtcNow
+                        };
+
+                        context.ModelInfos.Add(modelInfo);
+                        _logger.LogInformation("Created new ModelInfo for {ModelId}", aiModel.Id);
+                    }
+                }
+
+                // If there are no models at all, add some default ones
+                if (!modelInfos.Any() && !aiModels.Any())
+                {
+                    await AddDefaultModelsAsync(context);
+                }
+
+                // Update timestamps to ensure sync is recorded
+                var allModels = await context.AIModels.ToListAsync();
+                var allInfos = await context.ModelInfos.ToListAsync();
+
+                foreach (var model in allModels)
+                {
+                    model.LastModifiedAt = DateTime.UtcNow;
+                }
+
+                foreach (var info in allInfos)
+                {
+                    info.LastModifiedAt = DateTime.UtcNow;
+                }
+
                 await context.SaveChangesAsync();
                 _logger.LogInformation("Model sync completed successfully");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error syncing models");
+                throw;
             }
         }
 
-        public async Task<IEnumerable<ModelInfo>> GetAvailableModelsAsync()
+        private async Task AddDefaultModelsAsync(NexiDbContext context)
         {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            return await context.ModelInfos.ToListAsync();
-        }
+            _logger.LogInformation("Adding default models");
 
-        public async Task<string> GetModelDownloadUrlAsync(string modelId)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var model = await context.ModelInfos.FindAsync(modelId);
-            if (model != null)
+            // Add some common ONNX models
+            var models = new List<ModelInfo>
             {
-                return model.DownloadUrl;
-            }
-            throw new KeyNotFoundException($"Model {modelId} not found in database");
-        }
-
-        public async Task<ModelInfo> GetModelInfoAsync(string modelId)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var model = await context.ModelInfos.FindAsync(modelId);
-            if (model != null)
-            {
-                // Parse metadata JSON
-                if (!string.IsNullOrEmpty(model.MetadataJson))
+                new ModelInfo
                 {
-                    try
-                    {
-                        model.Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(model.MetadataJson)
-                            ?? new Dictionary<string, string>();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error deserializing metadata for model {ModelId}", modelId);
-                    }
-                }
-
-                return model;
-            }
-            throw new KeyNotFoundException($"Model {modelId} not found in database");
-        }
-
-        public async Task UpdateModelStatusAsync(string modelId, ModelStatus status)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var model = await context.AIModels.FindAsync(modelId);
-            if (model != null)
-            {
-                model.Status = status;
-                model.LastModifiedAt = DateTime.UtcNow;
-                if (status == ModelStatus.Downloaded)
+                    Id = "resnet50-v1-12",
+                    Name = "ResNet-50 v1",
+                    Description = "Image classification model trained on ImageNet",
+                    Version = "1.0",
+                    Size = "98 MB",
+                    Provider = AIProvider.Local,
+                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/resnet/model/resnet50-v1-12.onnx",
+                    SupportedTasks = new[] { "image-classification" },
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
+                },
+                new ModelInfo
                 {
-                    model.DownloadedDate = DateTime.UtcNow;
-                }
-                await context.SaveChangesAsync();
-            }
-            else
-            {
-                // If model doesn't exist yet, create it based on current models
-                if (_currentModels.TryGetValue(modelId, out var currentModel))
+                    Id = "bertsquad-10",
+                    Name = "BERT SQuAD",
+                    Description = "Question answering model based on BERT",
+                    Version = "1.0",
+                    Size = "435 MB",
+                    Provider = AIProvider.Local,
+                    DownloadUrl = "https://github.com/onnx/models/raw/main/text/machine_comprehension/bert-squad/model/bertsquad-10.onnx",
+                    SupportedTasks = new[] { "question-answering" },
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
+                },
+                new ModelInfo
                 {
-                    var aiModelData = new AIModelData
-                    {
-                        Id = modelId,
-                        Name = currentModel.Name,
-                        Description = currentModel.Description,
-                        Status = status,
-                        Size = currentModel.Size,
-                        Version = currentModel.Version,
-                        CreatedAt = DateTime.UtcNow,
-                        LastModifiedAt = DateTime.UtcNow
-                    };
-
-                    if (status == ModelStatus.Downloaded)
-                    {
-                        aiModelData.DownloadedDate = DateTime.UtcNow;
-                    }
-
-                    context.AIModels.Add(aiModelData);
-                    await context.SaveChangesAsync();
-                }
-                else
+                    Id = "ssd-12",
+                    Name = "SSD MobileNet v1",
+                    Description = "Object detection model",
+                    Version = "1.0",
+                    Size = "67 MB",
+                    Provider = AIProvider.Local,
+                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/ssd-mobilenetv1/model/ssd_mobilenet_v1_12.onnx",
+                    SupportedTasks = new[] { "object-detection" },
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
+                },
+                new ModelInfo
                 {
-                    throw new KeyNotFoundException($"Model {modelId} not found in database or current models");
+                    Id = "gpt2-10",
+                    Name = "GPT-2",
+                    Description = "Text generation model",
+                    Version = "1.0",
+                    Size = "548 MB",
+                    Provider = AIProvider.Local,
+                    DownloadUrl = "https://github.com/onnx/models/raw/main/text/machine_comprehension/gpt-2/model/gpt2-10.onnx",
+                    SupportedTasks = new[] { "text-generation" },
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
                 }
-            }
-        }
-
-        public async Task AddModelAsync(ModelInfo model)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-
-            // Serialize metadata if needed
-            if (model.Metadata.Count > 0 && string.IsNullOrEmpty(model.MetadataJson))
-            {
-                model.MetadataJson = JsonSerializer.Serialize(model.Metadata);
-            }
-
-            model.CreatedAt = DateTime.UtcNow;
-            model.LastModifiedAt = DateTime.UtcNow;
-
-            // Create a matching AIModelData entry
-            var aiModelData = new AIModelData
-            {
-                Id = model.Id,
-                Name = model.Name,
-                Description = model.Description,
-                Status = ModelStatus.NotDownloaded,
-                Size = model.Size,
-                Version = model.Version,
-                CreatedAt = DateTime.UtcNow,
-                LastModifiedAt = DateTime.UtcNow
             };
 
-            // Add both entries
-            context.ModelInfos.Add(model);
-
-            if (!await context.AIModels.AnyAsync(m => m.Id == model.Id))
+            foreach (var model in models)
             {
-                context.AIModels.Add(aiModelData);
+                context.ModelInfos.Add(model);
+
+                // Also add the corresponding AIModelData
+                context.AIModels.Add(new AIModelData
+                {
+                    Id = model.Id,
+                    Name = model.Name,
+                    Description = model.Description,
+                    Version = model.Version,
+                    Size = model.Size,
+                    Status = ModelStatus.NotDownloaded,
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
+                });
             }
 
             await context.SaveChangesAsync();
-
-            // Add to current models dictionary
-            _currentModels[model.Id] = model;
-        }
-
-        public async Task UpdateModelAsync(ModelInfo model)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-
-            // Serialize metadata if needed
-            if (model.Metadata.Count > 0)
-            {
-                model.MetadataJson = JsonSerializer.Serialize(model.Metadata);
-            }
-
-            model.LastModifiedAt = DateTime.UtcNow;
-
-            context.ModelInfos.Update(model);
-
-            // Update the corresponding AIModelData entry
-            var aiModelData = await context.AIModels.FindAsync(model.Id);
-            if (aiModelData != null)
-            {
-                aiModelData.Name = model.Name;
-                aiModelData.Description = model.Description;
-                aiModelData.Size = model.Size;
-                aiModelData.Version = model.Version;
-                aiModelData.LastModifiedAt = DateTime.UtcNow;
-            }
-
-            await context.SaveChangesAsync();
-
-            // Update in current models dictionary
-            _currentModels[model.Id] = model;
-        }
-
-        public async Task RemoveModelAsync(string modelId)
-        {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var modelInfo = await context.ModelInfos.FindAsync(modelId);
-            if (modelInfo != null)
-            {
-                context.ModelInfos.Remove(modelInfo);
-            }
-
-            var aiModelData = await context.AIModels.FindAsync(modelId);
-            if (aiModelData != null)
-            {
-                context.AIModels.Remove(aiModelData);
-            }
-
-            await context.SaveChangesAsync();
-
-            // Remove from current models dictionary if present
-            _currentModels.Remove(modelId);
+            _logger.LogInformation("Added {Count} default models", models.Count);
         }
     }
 }

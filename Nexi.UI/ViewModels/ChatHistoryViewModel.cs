@@ -10,6 +10,7 @@ using System.Reactive.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Collections.Generic;
+using Nexi.Services;
 
 namespace Nexi.UI.ViewModels
 {
@@ -21,6 +22,9 @@ namespace Nexi.UI.ViewModels
         private readonly IVoiceService _voiceService;
         private readonly MainViewModel _mainViewModel;
         private readonly ILogger<ChatViewModel> _chatViewModelLogger;
+        private readonly IAIService _aiService;
+        private readonly IAIModelService _aiModelService;
+        private readonly IUserSettingsService _userSettingsService;
         private string _searchQuery = string.Empty;
         private ObservableCollection<ChatHistoryItemViewModel> _chats;
         private readonly ObservableAsPropertyHelper<ObservableCollection<ChatHistoryItemViewModel>> _filteredChats;
@@ -32,7 +36,10 @@ namespace Nexi.UI.ViewModels
             ICommandProcessor commandProcessor,
             IVoiceService voiceService,
             MainViewModel mainViewModel,
-            ILogger<ChatViewModel> chatViewModelLogger)
+            ILogger<ChatViewModel> chatViewModelLogger,
+            IAIService aiService,
+            IAIModelService aiModelService,
+            IUserSettingsService userSettingsService)
         {
             _storageService = storageService;
             _logger = logger;
@@ -40,6 +47,9 @@ namespace Nexi.UI.ViewModels
             _voiceService = voiceService;
             _mainViewModel = mainViewModel;
             _chatViewModelLogger = chatViewModelLogger;
+            _aiService = aiService;
+            _aiModelService = aiModelService;
+            _userSettingsService = userSettingsService;
             _chats = new ObservableCollection<ChatHistoryItemViewModel>();
 
             // Initialize commands
@@ -122,6 +132,9 @@ namespace Nexi.UI.ViewModels
                         _commandProcessor,
                         _voiceService,
                         _storageService,
+                        _aiService,
+                        _aiModelService,
+                        _userSettingsService,
                         _chatViewModelLogger,
                         chatId);
 

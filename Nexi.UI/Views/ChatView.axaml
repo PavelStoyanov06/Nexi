@@ -10,7 +10,7 @@
              x:CompileBindings="True"
              x:DataType="vm:ChatViewModel">
 
-  <Grid RowDefinitions="*,Auto">
+  <Grid RowDefinitions="*,Auto,Auto">
     <!-- Messages Area -->
     <ScrollViewer Grid.Row="0"
                  Name="MessagesScroll"
@@ -46,13 +46,39 @@
       </ItemsControl>
     </ScrollViewer>
 
-    <!-- Input Area -->
+    <!-- Status Bar -->
     <Border Grid.Row="1"
+            Background="{DynamicResource SystemChromeMediumLowColor}"
+            Height="28"
+            IsVisible="{CompiledBinding !!StatusMessage}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <material:MaterialIcon Grid.Column="0"
+                             Kind="Information"
+                             Width="16"
+                             Height="16"
+                             Margin="10,0,0,0"
+                             VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1"
+                 Text="{CompiledBinding StatusMessage}"
+                 Margin="8,0,0,0"
+                 VerticalAlignment="Center"
+                 FontSize="12"/>
+        <ProgressBar Grid.Column="2"
+                   IsIndeterminate="True"
+                   Width="60"
+                   Height="2"
+                   Margin="0,0,10,0"
+                   IsVisible="{CompiledBinding IsProcessing}"/>
+      </Grid>
+    </Border>
+
+    <!-- Input Area -->
+    <Border Grid.Row="2"
             Background="{DynamicResource SystemChromeMediumLowColor}"
             BorderBrush="{DynamicResource SystemAccentColor}"
             BorderThickness="0,1,0,0"
             BoxShadow="0 -4 8 0 #20000000">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto"
             Margin="20">
         <!-- Voice Toggle -->
         <Border Grid.Column="0"
@@ -70,8 +96,26 @@
           </ToggleButton>
         </Border>
 
+        <!-- AI Toggle -->
+        <Border Grid.Column="1"
+                CornerRadius="20"
+                Background="Transparent"
+                Margin="8,0,0,0">
+          <ToggleButton Width="40"
+                      Height="40"
+                      CornerRadius="20"
+                      BorderBrush="{DynamicResource SystemAccentColor}"
+                      BorderThickness="1.5"
+                      VerticalContentAlignment="Center"
+                      HorizontalContentAlignment="Center"
+                      IsChecked="{CompiledBinding IsAiEnabled}"
+                      Command="{CompiledBinding ToggleAiModeCommand}">
+            <material:MaterialIcon Kind="Brain" Width="20" Height="20"/>
+          </ToggleButton>
+        </Border>
+
         <!-- Text Input -->
-        <TextBox Grid.Column="1"
+        <TextBox Grid.Column="2"
                 Text="{CompiledBinding CurrentMessage}"
                 Watermark="Type a message..."
                 Height="40"
@@ -82,7 +126,7 @@
                 Margin="16,0"/>
 
         <!-- Clear Button -->
-        <Border Grid.Column="2"
+        <Border Grid.Column="3"
                 CornerRadius="20"
                 Background="Transparent"
                 IsVisible="{CompiledBinding HasMessageText}">
@@ -97,7 +141,7 @@
         </Border>
 
         <!-- Send Button -->
-        <Button Grid.Column="3"
+        <Button Grid.Column="4"
                 Width="40"
                 Height="40"
                 CornerRadius="20"
@@ -187,6 +231,7 @@
     <Style Selector="TextBox:focus">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
     </Style>
+
     <Style Selector="TextBlock:not(.user)">
       <Setter Property="Foreground" Value="White"/>
     </Style>

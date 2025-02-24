@@ -52,14 +52,59 @@ namespace Nexi.UI
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
-            services.AddSingleton<IAIService, OnnxAIService>();
+
+            // Register both AI service implementations
+            services.AddSingleton<OnnxAIService>();
+            services.AddSingleton<MockAIService>();
+
+            // Register the IAIService as a factory that can switch implementations
+            services.AddSingleton<IAIService>(serviceProvider =>
+            {
+                // Get both implementations
+                var onnxService = serviceProvider.GetRequiredService<OnnxAIService>();
+                var mockService = serviceProvider.GetRequiredService<MockAIService>();
+
+                try
+                {
+                    // Log the service selection
+                    var logger = serviceProvider.GetRequiredService<ILogger<App>>();
+                    logger.LogInformation("Attempting to use OnnxAIService as primary AI service");
+
+                    // Try to use the ONNX service first
+                    return onnxService;
+                }
+                catch (Exception ex)
+                {
+                    // Log the error
+                    var logger = serviceProvider.GetRequiredService<ILogger<App>>();
+                    logger.LogError(ex, "Error initializing OnnxAIService, falling back to MockAIService");
+
+                    // Fall back to the mock service
+                    return mockService;
+                }
+            });
+
+            services.AddSingleton<IModelRepository, ModelRepository>();
             services.AddScoped<IChatStorageService, ChatStorageService>();
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
-            services.AddScoped<IModelRepository, ModelRepository>();
 
-            // Register ViewModels
-            services.AddSingleton<MainViewModel>();
+            services.AddSingleton<MainViewModel>(provider => {
+                var commandProcessor = provider.GetRequiredService<ICommandProcessor>();
+                var voiceService = provider.GetRequiredService<IVoiceService>();
+                var chatStorage = provider.GetRequiredService<IChatStorageService>();
+                var aiService = provider.GetRequiredService<IAIService>();
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
+                return new MainViewModel(
+                    commandProcessor,
+                    voiceService,
+                    chatStorage,
+                    aiService,
+                    aiModelService,
+                    userSettingsService,
+                    provider);
+            });
 
             services.AddTransient(provider => {
                 var storageService = provider.GetRequiredService<IChatStorageService>();
@@ -68,8 +113,19 @@ namespace Nexi.UI
                 var voiceService = provider.GetRequiredService<IVoiceService>();
                 var mainViewModel = provider.GetRequiredService<MainViewModel>();
                 var chatViewModelLogger = provider.GetRequiredService<ILogger<ChatViewModel>>();
+                var aiService = provider.GetRequiredService<IAIService>();
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 return new ChatHistoryViewModel(
-                    storageService, logger, commandProcessor, voiceService, mainViewModel, chatViewModelLogger);
+                    storageService,
+                    logger,
+                    commandProcessor,
+                    voiceService,
+                    mainViewModel,
+                    chatViewModelLogger,
+                    aiService,
+                    aiModelService,
+                    userSettingsService);
             });
 
             services.AddTransient(provider => {
@@ -93,8 +149,18 @@ namespace Nexi.UI
                 var commandProcessor = provider.GetRequiredService<ICommandProcessor>();
                 var voiceService = provider.GetRequiredService<IVoiceService>();
                 var chatStorage = provider.GetRequiredService<IChatStorageService>();
+                var aiService = provider.GetRequiredService<IAIService>();
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 var logger = provider.GetRequiredService<ILogger<ChatViewModel>>();
-                return new ChatViewModel(commandProcessor, voiceService, chatStorage, logger);
+                return new ChatViewModel(
+                    commandProcessor,
+                    voiceService,
+                    chatStorage,
+                    aiService,
+                    aiModelService,
+                    userSettingsService,
+                    logger);
             });
 
             return services.BuildServiceProvider();
