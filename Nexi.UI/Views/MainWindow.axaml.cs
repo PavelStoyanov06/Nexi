@@ -42,13 +42,8 @@ namespace Nexi.UI.Views
         {
             try
             {
-                var app = App.Current;
-                if (app == null)
-                {
-                    return;
-                }
-
-                var services = app.Services;
+                // Use App.Services instead of App.Current.Services
+                var services = App.Services;
                 if (services == null)
                 {
                     return;
@@ -76,10 +71,6 @@ namespace Nexi.UI.Views
                         // Ignore any exceptions during cleanup
                     }
                 }
-
-                // We'll avoid explicit disposal of the service provider here
-                // since it can lead to ObjectDisposedException when services
-                // are still being used during shutdown
 
                 // However, we can still cancel the cleanup token to signal operations to stop
                 _cleanupCts.Cancel();

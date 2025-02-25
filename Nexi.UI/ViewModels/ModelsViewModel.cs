@@ -1,14 +1,15 @@
-﻿using ReactiveUI;
-using System;
-using System.Collections.ObjectModel;
-using System.Threading.Tasks;
-using System.Windows.Input;
-using System.Linq;
+﻿using Avalonia.Threading;
+using Microsoft.Extensions.Logging;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
-using Microsoft.Extensions.Logging;
-using Avalonia.Threading;
-using System.Threading;
+using ReactiveUI;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Reactive.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
 
 namespace Nexi.UI.ViewModels
 {
@@ -22,6 +23,11 @@ namespace Nexi.UI.ViewModels
         private ModelStatus _status;
         private double _downloadProgress;
         private bool _isDownloading;
+        private string _category;
+        private string _backgroundColor;
+        private string _statusText;
+        private string[] _supportedTasks;
+        private string _downloadUrl;
 
         public string Id
         {
@@ -71,6 +77,38 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isDownloading, value);
         }
 
+        public string Category
+        {
+            get => _category;
+            set => this.RaiseAndSetIfChanged(ref _category, value);
+        }
+
+        public string BackgroundColor
+        {
+            get => _backgroundColor;
+            set => this.RaiseAndSetIfChanged(ref _backgroundColor, value);
+        }
+
+        public string StatusText
+        {
+            get => _statusText;
+            set => this.RaiseAndSetIfChanged(ref _statusText, value);
+        }
+
+        public string[] SupportedTasks
+        {
+            get => _supportedTasks;
+            set => this.RaiseAndSetIfChanged(ref _supportedTasks, value);
+        }
+
+        public string DownloadUrl
+        {
+            get => _downloadUrl;
+            set => this.RaiseAndSetIfChanged(ref _downloadUrl, value);
+        }
+
+        public string TasksDisplay => SupportedTasks != null ? string.Join(", ", SupportedTasks) : string.Empty;
+
         public ModelItemViewModel(ModelInfo modelInfo, AIModelData? aiModelData)
         {
             Id = modelInfo.Id;
@@ -81,6 +119,11 @@ namespace Nexi.UI.ViewModels
             Status = aiModelData?.Status ?? ModelStatus.NotDownloaded;
             DownloadProgress = 0;
             IsDownloading = Status == ModelStatus.Downloading;
+            SupportedTasks = modelInfo.SupportedTasks;
+            DownloadUrl = modelInfo.DownloadUrl;
+            Category = "Unknown"; // Will be set by the view model
+            BackgroundColor = "#607D8B"; // Default color
+            StatusText = Status.ToString();
         }
 
         // Creates a ModelItemViewModel by combining ModelInfo and AIModelData
@@ -99,6 +142,10 @@ namespace Nexi.UI.ViewModels
         private ObservableCollection<ModelItemViewModel> _availableModels;
         private bool _isLoading;
         private string _statusMessage = string.Empty;
+        private bool _showOnlyDownloaded = false;
+        private string _searchQuery = string.Empty;
+        private string _selectedCategory = "All";
+        private readonly ObservableAsPropertyHelper<ObservableCollection<ModelItemViewModel>> _filteredModels;
 
         public ModelsViewModel(
             IAIModelService aiModelService,
@@ -116,6 +163,8 @@ namespace Nexi.UI.ViewModels
             RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
             DownloadModelCommand = ReactiveCommand.CreateFromTask<string>(DownloadModelAsync);
             DeleteModelCommand = ReactiveCommand.CreateFromTask<string>(DeleteModelAsync);
+            ToggleShowDownloadedCommand = ReactiveCommand.Create(() => ShowOnlyDownloaded = !ShowOnlyDownloaded);
+            ClearSearchCommand = ReactiveCommand.Create(() => SearchQuery = string.Empty);
 
             // Subscribe to AI service events
             _aiService.OnInferenceProgress += (sender, message) =>
@@ -134,6 +183,44 @@ namespace Nexi.UI.ViewModels
                 });
             };
 
+            // Setup filtered models based on search, category and show options
+            _filteredModels = this.WhenAnyValue(
+                x => x.SearchQuery,
+                x => x.SelectedCategory,
+                x => x.ShowOnlyDownloaded,
+                x => x.AvailableModels,
+                (search, category, showOnlyDownloaded, models) =>
+                {
+                    if (models == null) return new ObservableCollection<ModelItemViewModel>();
+
+                    // Start with all models
+                    var filtered = models.AsEnumerable();
+
+                    // Apply search filter if present
+                    if (!string.IsNullOrWhiteSpace(search))
+                    {
+                        var searchLower = search.Trim().ToLowerInvariant();
+                        filtered = filtered.Where(m =>
+                            m.Name.ToLowerInvariant().Contains(searchLower) ||
+                            m.Description.ToLowerInvariant().Contains(searchLower));
+                    }
+
+                    // Apply category filter if not "All"
+                    if (category != "All")
+                    {
+                        filtered = filtered.Where(m => GetModelCategory(m) == category);
+                    }
+
+                    // Apply downloaded filter if enabled
+                    if (showOnlyDownloaded)
+                    {
+                        filtered = filtered.Where(m => m.Status == ModelStatus.Downloaded);
+                    }
+
+                    return new ObservableCollection<ModelItemViewModel>(filtered);
+                })
+                .ToProperty(this, x => x.FilteredModels);
+
             // Load models on startup
             _ = RefreshModelsAsync();
         }
@@ -143,6 +230,8 @@ namespace Nexi.UI.ViewModels
             get => _availableModels;
             private set => this.RaiseAndSetIfChanged(ref _availableModels, value);
         }
+
+        public ObservableCollection<ModelItemViewModel> FilteredModels => _filteredModels.Value;
 
         public bool IsLoading
         {
@@ -156,9 +245,39 @@ namespace Nexi.UI.ViewModels
             private set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
         }
 
+        public bool ShowOnlyDownloaded
+        {
+            get => _showOnlyDownloaded;
+            set => this.RaiseAndSetIfChanged(ref _showOnlyDownloaded, value);
+        }
+
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set => this.RaiseAndSetIfChanged(ref _searchQuery, value);
+        }
+
+        public string SelectedCategory
+        {
+            get => _selectedCategory;
+            set => this.RaiseAndSetIfChanged(ref _selectedCategory, value);
+        }
+
+        public IEnumerable<string> Categories => new List<string>
+        {
+            "All",
+            "Small",
+            "Medium",
+            "Large",
+            "Specialized",
+            "Multilingual"
+        };
+
         public ICommand RefreshModelsCommand { get; }
         public ICommand DownloadModelCommand { get; }
         public ICommand DeleteModelCommand { get; }
+        public ICommand ToggleShowDownloadedCommand { get; }
+        public ICommand ClearSearchCommand { get; }
 
         private async Task RefreshModelsAsync()
         {
@@ -179,7 +298,18 @@ namespace Nexi.UI.ViewModels
                 foreach (var modelInfo in modelInfos)
                 {
                     var aiModel = aiModels.FirstOrDefault(m => m.Id == modelInfo.Id);
-                    viewModels.Add(ModelItemViewModel.Create(modelInfo, aiModel));
+                    var viewModel = ModelItemViewModel.Create(modelInfo, aiModel);
+
+                    // Add category tag based on model size or specialization
+                    viewModel.Category = GetModelCategory(viewModel);
+
+                    // Add color based on model size
+                    viewModel.BackgroundColor = GetModelBackgroundColor(viewModel);
+
+                    // Add appropriate status text
+                    viewModel.StatusText = GetStatusText(viewModel.Status);
+
+                    viewModels.Add(viewModel);
                 }
 
                 AvailableModels = viewModels;
@@ -207,6 +337,7 @@ namespace Nexi.UI.ViewModels
                 IsLoading = true;
                 model.IsDownloading = true;
                 model.Status = ModelStatus.Downloading;
+                model.StatusText = "Downloading";
                 StatusMessage = $"Starting download of {model.Name}...";
 
                 // Update DB status
@@ -228,6 +359,7 @@ namespace Nexi.UI.ViewModels
                 // Update status when complete
                 model.Status = ModelStatus.Downloaded;
                 model.IsDownloading = false;
+                model.StatusText = "Installed";
                 StatusMessage = $"Model {model.Name} downloaded successfully.";
 
                 // Update DB status
@@ -238,16 +370,17 @@ namespace Nexi.UI.ViewModels
                 _logger.LogError(ex, "Error downloading model {ModelId}", modelId);
                 StatusMessage = $"Download failed: {ex.Message}";
 
-                // Update UI to show error
+                // Update DB status
+                await _aiModelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
+
+                // Find the model view model and update its status
                 var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
                 if (model != null)
                 {
                     model.Status = ModelStatus.Error;
                     model.IsDownloading = false;
+                    model.StatusText = "Download failed";
                 }
-
-                // Update DB status
-                await _aiModelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
             }
             finally
             {
@@ -279,6 +412,7 @@ namespace Nexi.UI.ViewModels
                 {
                     // Update UI
                     model.Status = ModelStatus.NotDownloaded;
+                    model.StatusText = "Available";
                     model.DownloadProgress = 0;
                     StatusMessage = $"Model {model.Name} deleted successfully.";
                 }
@@ -296,6 +430,56 @@ namespace Nexi.UI.ViewModels
             {
                 IsLoading = false;
             }
+        }
+
+        private string GetModelCategory(ModelItemViewModel model)
+        {
+            // Categorize based on model size and name
+            if (model.Id.Contains("tiny") || model.Id.Contains("phi") ||
+                model.Size.Contains("1.1") || model.Size.Contains("2.4"))
+                return "Small";
+
+            if (model.Id.Contains("7b") || model.Id.Contains("mistral") ||
+                model.Size.Contains("4.1") || model.Size.Contains("3.6"))
+                return "Medium";
+
+            if (model.Id.Contains("13b") || model.Id.Contains("mixtral") ||
+                model.Size.Contains("7.3") || model.Size.Contains("7.8"))
+                return "Large";
+
+            if (model.Id.Contains("code") || model.Id.Contains("bloom"))
+                return "Specialized";
+
+            if (model.Id.Contains("bloom") || model.Id.Contains("yi"))
+                return "Multilingual";
+
+            return "Medium"; // Default category
+        }
+
+        private string GetModelBackgroundColor(ModelItemViewModel model)
+        {
+            // Return colors based on category for visual identification
+            switch (GetModelCategory(model))
+            {
+                case "Small": return "#4CAF50"; // Green
+                case "Medium": return "#2196F3"; // Blue
+                case "Large": return "#9C27B0"; // Purple
+                case "Specialized": return "#FF9800"; // Orange
+                case "Multilingual": return "#E91E63"; // Pink
+                default: return "#607D8B"; // Blue Grey
+            }
+        }
+
+        private string GetStatusText(ModelStatus status)
+        {
+            return status switch
+            {
+                ModelStatus.NotDownloaded => "Available",
+                ModelStatus.Downloading => "Downloading",
+                ModelStatus.Downloaded => "Installed",
+                ModelStatus.Error => "Error",
+                _ => "Unknown"
+            };
         }
     }
 }

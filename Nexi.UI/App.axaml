@@ -4,7 +4,7 @@
              xmlns:material="using:Material.Icons.Avalonia"
 			 xmlns:converters="using:Nexi.UI.Converters"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+  <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
   <Application.Resources>
     <converters:BoolToBackgroundConverter x:Key="BoolToBackgroundConverter"/>
@@ -21,5 +21,5 @@
       </FluentTheme.Palettes>
     </FluentTheme>
     <material:MaterialIconStyles />
-    </Application.Styles>
+  </Application.Styles>
 </Application>

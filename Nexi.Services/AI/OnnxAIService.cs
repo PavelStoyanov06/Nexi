@@ -1,336 +1,84 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
-using Nexi.Data.Context;
+﻿using Microsoft.Extensions.Logging;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
-using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Net.Http;
+using System.Runtime.InteropServices;
+using SharpCompress.Archives;
+using SharpCompress.Common;
+using Microsoft.ML.OnnxRuntime;
 
 namespace Nexi.Services.AI
 {
     public class OnnxAIService : IAIService, IDisposable
     {
-        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<OnnxAIService> _logger;
+        private readonly IAIModelService _modelService;
+        private readonly HttpClient _httpClient;
         private readonly Dictionary<string, InferenceSession> _loadedModels = new();
-        private readonly SemaphoreSlim _modelLock = new(1, 1);
+        private readonly string _modelsBasePath;
         private bool _disposed;
-        private bool _useMockModel = false;
 
-        // Event handlers
-        public event EventHandler<string> OnInferenceProgress;
-        public event EventHandler<Exception> OnError;
+        public event EventHandler<string>? OnInferenceProgress;
+        public event EventHandler<Exception>? OnError;
 
         public OnnxAIService(
-            IDbContextFactory<NexiDbContext> contextFactory,
-            ILogger<OnnxAIService> logger)
+            ILogger<OnnxAIService> logger,
+            IAIModelService modelService)
         {
-            _contextFactory = contextFactory;
             _logger = logger;
+            _modelService = modelService;
+            _httpClient = new HttpClient();
+            _httpClient.Timeout = TimeSpan.FromMinutes(30); // Long timeout for large downloads
+
+            // Set up the models directory in the user's app data folder
+            _modelsBasePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Nexi", "Models");
+
+            // Ensure directory exists
+            Directory.CreateDirectory(_modelsBasePath);
         }
+
+        public bool IsModelLoaded(string modelId) => _loadedModels.ContainsKey(modelId);
 
         public async Task<AIResponse> GetCompletionAsync(string prompt, AIRequestOptions options)
         {
             try
             {
-                ReportProgress("Generating AI response...");
+                RaiseInferenceProgress("Preparing inference...");
 
-                // Check if we should use the mock implementation
-                if (_useMockModel)
+                // Load the model if it's not already loaded
+                if (!_loadedModels.TryGetValue(options.ModelId, out var session))
                 {
-                    return await GetMockCompletionAsync(prompt, options);
+                    await LoadModelAsync(options.ModelId);
+                    if (!_loadedModels.TryGetValue(options.ModelId, out session))
+                    {
+                        throw new InvalidOperationException($"Failed to load model {options.ModelId}");
+                    }
                 }
 
-                // Try to load the model
-                try
+                // In a real implementation, we would use the ONNX model to generate text
+                // This is a simplified version that just echoes the prompt
+                RaiseInferenceProgress("Generating response...");
+
+                // Simulate some delay for inference
+                await Task.Delay(500);
+
+                var response = new AIResponse
                 {
-                    // Ensure the model is loaded
-                    if (!_loadedModels.ContainsKey(options.ModelId))
-                    {
-                        ReportProgress($"Loading model {options.ModelId}...");
-                        await LoadModelAsync(options.ModelId);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error loading model {ModelId}, falling back to mock implementation", options.ModelId);
-                    _useMockModel = true;
-                    ReportProgress($"Using simulated AI responses due to model loading issues");
-                    return await GetMockCompletionAsync(prompt, options);
-                }
+                    Text = $"This is a simulated response to: {prompt}\n\nIn a real implementation, this would use the loaded ONNX model to generate text based on the prompt and the specified options (temperature: {options.Temperature}, max tokens: {options.MaxTokens})."
+                };
 
-                // If we got here, we have a loaded model
-                var session = _loadedModels[options.ModelId];
-                ReportProgress("Running inference...");
-
-                try
-                {
-                    // Process the input to match what the model expects
-                    var inputs = session.InputMetadata;
-                    var inputNames = inputs.Keys.ToList();
-
-                    if (inputNames.Count == 0)
-                    {
-                        throw new InvalidOperationException("Model has no input nodes");
-                    }
-
-                    // Create appropriate inputs based on the model's expected input
-                    var modelInputs = new List<NamedOnnxValue>();
-
-                    // This is a common pattern for NLP models like GPT-2, BERT, etc.
-                    // We're checking for common input names and adapting accordingly
-                    if (inputs.ContainsKey("input"))
-                    {
-                        // Simple input, likely an image model
-                        var tensor = new DenseTensor<float>(new[] { 1, prompt.Length });
-                        for (int i = 0; i < prompt.Length; i++)
-                        {
-                            tensor[0, i] = prompt[i];
-                        }
-                        modelInputs.Add(NamedOnnxValue.CreateFromTensor("input", tensor));
-                    }
-                    else if (inputs.ContainsKey("input_ids") || inputs.ContainsKey("tokens"))
-                    {
-                        // Text tokenization is complex, this is just a placeholder
-                        // In a real implementation, you'd use a proper tokenizer
-                        var inputName = inputs.ContainsKey("input_ids") ? "input_ids" : "tokens";
-                        var tokens = Tokenize(prompt);
-                        var tensor = new DenseTensor<long>(new[] { 1, tokens.Length });
-                        for (int i = 0; i < tokens.Length; i++)
-                        {
-                            tensor[0, i] = tokens[i];
-                        }
-                        modelInputs.Add(NamedOnnxValue.CreateFromTensor(inputName, tensor));
-
-                        // Add attention mask if the model requires it
-                        if (inputs.ContainsKey("attention_mask"))
-                        {
-                            var attentionMask = new DenseTensor<long>(new[] { 1, tokens.Length });
-                            for (int i = 0; i < tokens.Length; i++)
-                            {
-                                attentionMask[0, i] = 1; // All tokens are real (not padding)
-                            }
-                            modelInputs.Add(NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask));
-                        }
-                    }
-                    else
-                    {
-                        // For other model types, we'll use the first input and try a simple approach
-                        var firstInputName = inputNames[0];
-                        var shape = inputs[firstInputName].Dimensions;
-                        var dataType = inputs[firstInputName].ElementDataType; // Get expected data type
-
-                        // Log information for debugging
-                        _logger.LogInformation("Model input {Name} has data type {Type} with shape {Shape}",
-                            firstInputName, dataType, string.Join(",", shape));
-
-                        // Check shape type and adjust accordingly
-                        if (shape.Length >= 2)
-                        {
-                            // For image or sequence models (common case)
-                            var inputLength = shape.Length > 1 && shape[1] > 0 ? shape[1] : 64;
-
-                            // Create tensor with the correct type based on what the model expects
-                            switch (dataType)
-                            {
-                                case TensorElementType.Float:
-                                    var floatTensor = new DenseTensor<float>(new[] { 1, inputLength });
-
-                                    // Simple encoding of the prompt to float values
-                                    var floatBytes = Encoding.UTF8.GetBytes(prompt);
-                                    for (int i = 0; i < Math.Min(floatBytes.Length, inputLength); i++)
-                                    {
-                                        floatTensor[0, i] = floatBytes[i] / 255.0f;
-                                    }
-
-                                    modelInputs.Add(NamedOnnxValue.CreateFromTensor(firstInputName, floatTensor));
-                                    break;
-
-                                case TensorElementType.Int64:
-                                    var longTensor = new DenseTensor<long>(new[] { 1, inputLength });
-
-                                    // Simple encoding of the prompt to integer values
-                                    var longBytes = Encoding.UTF8.GetBytes(prompt);
-                                    for (int i = 0; i < Math.Min(longBytes.Length, inputLength); i++)
-                                    {
-                                        longTensor[0, i] = longBytes[i]; // Direct integer value, no normalization
-                                    }
-
-                                    modelInputs.Add(NamedOnnxValue.CreateFromTensor(firstInputName, longTensor));
-                                    break;
-
-                                case TensorElementType.Int32:
-                                    var intTensor = new DenseTensor<int>(new[] { 1, inputLength });
-
-                                    // Simple encoding of the prompt to integer values
-                                    var intBytes = Encoding.UTF8.GetBytes(prompt);
-                                    for (int i = 0; i < Math.Min(intBytes.Length, inputLength); i++)
-                                    {
-                                        intTensor[0, i] = intBytes[i]; // Direct integer value
-                                    }
-
-                                    modelInputs.Add(NamedOnnxValue.CreateFromTensor(firstInputName, intTensor));
-                                    break;
-
-                                case TensorElementType.String:
-                                    // For string inputs, we can just pass the string directly
-                                    var stringTensor = new DenseTensor<string>(new[] { 1, 1 });
-                                    stringTensor[0, 0] = prompt;
-
-                                    modelInputs.Add(NamedOnnxValue.CreateFromTensor(firstInputName, stringTensor));
-                                    break;
-
-                                default:
-                                    // For any other data type, we'll attempt with long values as a reasonable default
-                                    _logger.LogWarning("Unsupported tensor element type: {Type}. Attempting with Int64 values.", dataType);
-
-                                    var defaultTensor = new DenseTensor<long>(new[] { 1, inputLength });
-                                    var defaultBytes = Encoding.UTF8.GetBytes(prompt);
-                                    for (int i = 0; i < Math.Min(defaultBytes.Length, inputLength); i++)
-                                    {
-                                        defaultTensor[0, i] = defaultBytes[i];
-                                    }
-
-                                    modelInputs.Add(NamedOnnxValue.CreateFromTensor(firstInputName, defaultTensor));
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException($"Unsupported input shape for {firstInputName}");
-                        }
-                    }
-
-                    // Run inference
-                    var outputs = session.Run(modelInputs);
-
-                    // Extract the output - this will depend on the model
-                    var outputNames = session.OutputMetadata.Keys.ToList();
-                    if (outputNames.Count == 0)
-                    {
-                        throw new InvalidOperationException("Model has no output nodes");
-                    }
-
-                    string result = "Model generated output"; // Default placeholder
-
-                    // Try to extract text from outputs
-                    foreach (var output in outputs)
-                    {
-                        // For text models, we typically want the output with logits or token ids
-                        if (output.Name.Contains("logit") || output.Name.Contains("output") ||
-                            output.Name == outputNames[0])
-                        {
-                            // This is very simplified - in a real implementation,
-                            // you'd decode the tokens properly
-                            try
-                            {
-                                result = "Response: The model has processed your input successfully.";
-
-                                // In a complete implementation, this is where you'd convert
-                                // the model's numerical output back to text
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Error parsing model output, using generic response");
-                            }
-                            break;
-                        }
-                    }
-
-                    ReportProgress("Response generated successfully");
-
-                    return new AIResponse
-                    {
-                        Text = result,
-                        Metadata = new Dictionary<string, object>
-                        {
-                            { "model", options.ModelId },
-                            { "temperature", options.Temperature }
-                        }
-                    };
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error during inference with model {ModelId}, falling back to mock implementation", options.ModelId);
-                    _useMockModel = true;
-                    ReportProgress($"Using simulated AI responses due to inference issues");
-                    return await GetMockCompletionAsync(prompt, options);
-                }
+                RaiseInferenceProgress("Response generated successfully");
+                return response;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during inference");
-                ReportProgress($"Error: {ex.Message}");
+                _logger.LogError(ex, "Error during text completion");
                 OnError?.Invoke(this, ex);
-
-                // Return a fallback response instead of throwing
-                return new AIResponse
-                {
-                    Text = $"I'm sorry, but I encountered an error while processing your request. Please try again later or contact support if the issue persists.",
-                    Metadata = new Dictionary<string, object>
-                    {
-                        { "error", ex.Message },
-                        { "model", options.ModelId }
-                    }
-                };
+                throw;
             }
-        }
-
-        private async Task<AIResponse> GetMockCompletionAsync(string prompt, AIRequestOptions options)
-        {
-            // This is a fallback method that provides mock responses when the real model isn't available
-            ReportProgress("Generating simulated response...");
-
-            // Add a small delay to simulate processing time
-            await Task.Delay(500);
-
-            string response;
-
-            // Generate a reasonable response based on the prompt
-            if (prompt.Contains("hello") || prompt.Contains("hi"))
-            {
-                response = "Hello! How can I assist you today?";
-            }
-            else if (prompt.Contains("how are you"))
-            {
-                response = "I'm doing well, thank you for asking! How can I help you?";
-            }
-            else if (prompt.Contains("help") || prompt.Contains("assistance"))
-            {
-                response = "I'd be happy to help! Please let me know what you need assistance with.";
-            }
-            else if (prompt.Contains("thanks") || prompt.Contains("thank you"))
-            {
-                response = "You're welcome! Is there anything else I can help you with?";
-            }
-            else if (prompt.Length < 10)
-            {
-                response = "I see your message. Could you provide more details so I can better assist you?";
-            }
-            else
-            {
-                // For longer prompts, give a more generic response
-                response = "Thank you for your message. I'm currently operating in simulation mode since my AI models aren't properly loaded. Once the models are correctly installed and configured, I'll be able to provide more specific and helpful responses. Is there anything else I can assist you with?";
-            }
-
-            ReportProgress("Simulated response generated");
-
-            return new AIResponse
-            {
-                Text = response,
-                Metadata = new Dictionary<string, object>
-                {
-                    { "model", "simulation" },
-                    { "temperature", options.Temperature }
-                }
-            };
         }
 
         public async Task<AIResponse> GetCompletionWithHistoryAsync(
@@ -340,250 +88,94 @@ namespace Nexi.Services.AI
         {
             try
             {
-                // Format history and current prompt into a single context
-                var formattedPrompt = FormatPromptWithHistory(history, prompt, options.SystemPrompt);
+                RaiseInferenceProgress("Preparing inference with context...");
 
-                // Call the base GetCompletionAsync with the formatted prompt
-                return await GetCompletionAsync(formattedPrompt, options);
+                // Format the conversation history into a single context string
+                var formattedHistory = FormatConversationHistory(history);
+                var fullPrompt = $"{formattedHistory}\nUser: {prompt}\nAssistant:";
+
+                // Use the base completion method with the full prompt
+                return await GetCompletionAsync(fullPrompt, options);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during inference with history");
+                _logger.LogError(ex, "Error during text completion with history");
                 OnError?.Invoke(this, ex);
-
-                // Return a fallback response instead of throwing
-                return new AIResponse
-                {
-                    Text = $"I'm sorry, but I encountered an error while processing your request with conversation history. Please try again with a new conversation.",
-                    Metadata = new Dictionary<string, object>
-                    {
-                        { "error", ex.Message },
-                        { "model", options.ModelId }
-                    }
-                };
+                throw;
             }
         }
 
-        public async Task DownloadModelAsync(string modelId, IProgress<double> progress)
+        public async Task DownloadModelAsync(string modelId, IProgress<double>? progress = null)
         {
             try
             {
-                await _modelLock.WaitAsync();
-
-                // Check if the model is already downloaded
-                using var context = await _contextFactory.CreateDbContextAsync();
-                var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == modelId);
-
+                // Get model info
+                var model = await _modelService.GetModelAsync(modelId);
                 if (model == null)
                 {
                     throw new KeyNotFoundException($"Model {modelId} not found");
                 }
 
-                if (model.Status == ModelStatus.Downloaded)
+                // Get model info with download URL
+                var modelInfo = await _modelService.GetModelInfoAsync(modelId);
+                if (modelInfo == null || string.IsNullOrEmpty(modelInfo.DownloadUrl))
                 {
-                    progress?.Report(1.0);
-                    return;
+                    throw new InvalidOperationException($"Download URL not found for model {modelId}");
                 }
 
-                // Get model info
-                var modelInfo = await context.ModelInfos.FirstOrDefaultAsync(m => m.Id == modelId);
-                if (modelInfo == null)
-                {
-                    throw new KeyNotFoundException($"Model info for {modelId} not found");
-                }
+                RaiseInferenceProgress($"Starting download of {model.Name}...");
 
-                // Update model status to downloading
-                model.Status = ModelStatus.Downloading;
-                await context.SaveChangesAsync();
-
-                // Create models directory if it doesn't exist
-                var modelsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models");
-                Directory.CreateDirectory(modelsDir);
-                var modelDir = Path.Combine(modelsDir, modelId);
+                // Create the model directory if it doesn't exist
+                var modelDir = Path.Combine(_modelsBasePath, modelId);
                 Directory.CreateDirectory(modelDir);
 
-                // The actual model file path
-                var modelPath = Path.Combine(modelDir, $"{modelId}.onnx");
+                // Determine the file extension from the URL
+                var extension = Path.GetExtension(modelInfo.DownloadUrl);
+                var fileName = $"{modelId}{extension}";
+                var filePath = Path.Combine(modelDir, fileName);
 
-                bool downloaded = false;
+                // Download the file
+                await DownloadFileAsync(modelInfo.DownloadUrl, filePath, progress);
 
-                // Try to download from actual URL if available
-                if (!string.IsNullOrEmpty(modelInfo.DownloadUrl) && !modelInfo.DownloadUrl.Equals("placeholder", StringComparison.OrdinalIgnoreCase))
+                // Handle extraction if the file is compressed
+                if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".tar", StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals(".gz", StringComparison.OrdinalIgnoreCase))
                 {
-                    try
-                    {
-                        _logger.LogInformation("Starting download from URL: {Url}", modelInfo.DownloadUrl);
-
-                        using (var httpClient = new HttpClient())
-                        {
-                            // Set a reasonable timeout
-                            httpClient.Timeout = TimeSpan.FromMinutes(10);
-
-                            // First try a HEAD request to check the file size
-                            var response = await httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Head, modelInfo.DownloadUrl));
-                            response.EnsureSuccessStatusCode();
-
-                            // Get content length if available
-                            long? contentLength = response.Content.Headers.ContentLength;
-
-                            // Create the actual download request
-                            using (var downloadRequest = new HttpRequestMessage(HttpMethod.Get, modelInfo.DownloadUrl))
-                            {
-                                // Start the actual download
-                                using (var downloadResponse = await httpClient.SendAsync(downloadRequest, HttpCompletionOption.ResponseHeadersRead))
-                                {
-                                    downloadResponse.EnsureSuccessStatusCode();
-
-                                    using (var contentStream = await downloadResponse.Content.ReadAsStreamAsync())
-                                    using (var fileStream = new FileStream(modelPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
-                                    {
-                                        // If we know the content length, we can report more accurate progress
-                                        if (contentLength.HasValue)
-                                        {
-                                            var buffer = new byte[8192];
-                                            long totalBytesRead = 0;
-                                            int bytesRead;
-
-                                            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                                            {
-                                                await fileStream.WriteAsync(buffer, 0, bytesRead);
-                                                totalBytesRead += bytesRead;
-                                                progress?.Report((double)totalBytesRead / contentLength.Value);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // If we don't know the content length, just copy and report indeterminate progress
-                                            await contentStream.CopyToAsync(fileStream);
-                                            progress?.Report(0.5); // Report some progress
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        downloaded = true;
-                        _logger.LogInformation("Downloaded model file to {Path}", modelPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error downloading model from URL: {Url}", modelInfo.DownloadUrl);
-                        // We'll fall back to the mock model approach
-                    }
+                    RaiseInferenceProgress("Extracting model files...");
+                    await Task.Run(() => ExtractArchive(filePath, modelDir));
                 }
 
-                // If real download failed or wasn't available, create a mock model for UI purposes
-                if (!downloaded)
-                {
-                    _logger.LogInformation("Creating mock model placeholder at {Path}", modelPath);
+                // Update model status and path
+                RaiseInferenceProgress("Updating model information...");
+                await _modelService.UpdateModelAsync(modelId, filePath, ModelStatus.Downloaded);
 
-                    // Create mock data for the model file - needs to have the right header
-                    using (var fs = File.Create(modelPath))
-                    {
-                        // Create a minimal valid ONNX file (just a header)
-                        // ONNX files start with the magic string 'ONNX'
-                        byte[] onnxHeader = { 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }; // ONNX model format header
-                        byte[] modelVersion = { 0x00, 0x00, 0x00, 0x00 }; // Model version
-
-                        // Write these headers
-                        fs.Write(onnxHeader, 0, onnxHeader.Length);
-                        fs.Write(modelVersion, 0, modelVersion.Length);
-
-                        // Add a bit more data to make it not immediately rejected for being too small
-                        byte[] dummyData = new byte[1024]; // 1KB of zeros
-                                                           // Fill in some random data
-                        new Random().NextBytes(dummyData);
-                        fs.Write(dummyData, 0, dummyData.Length);
-                    }
-
-                    _logger.LogWarning("Created placeholder model file at {Path}. This is not a real model file.", modelPath);
-
-                    // Simulate progress
-                    for (int i = 0; i <= 10; i++)
-                    {
-                        progress?.Report(i / 10.0);
-                        await Task.Delay(200);
-                    }
-                }
-
-                // Mark the model as downloaded in the database
-                model.Status = ModelStatus.Downloaded;
-                model.LocalPath = modelPath;
-                model.DownloadedDate = DateTime.UtcNow;
-                await context.SaveChangesAsync();
-
-                progress?.Report(1.0);
-
-                _logger.LogInformation("Model {ModelId} marked as downloaded", modelId);
-
-                // Add a note in the database that this is a placeholder if we didn't really download it
-                if (!downloaded)
-                {
-                    _logger.LogWarning("Note: Model file for {ModelId} is a placeholder and not a real model", modelId);
-                }
+                RaiseInferenceProgress($"Model {model.Name} downloaded successfully");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error downloading model {ModelId}", modelId);
-
                 // Update model status to error
-                using var context = await _contextFactory.CreateDbContextAsync();
-                var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == modelId);
-                if (model != null)
-                {
-                    model.Status = ModelStatus.Error;
-                    await context.SaveChangesAsync();
-                }
-
+                await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
                 OnError?.Invoke(this, ex);
                 throw;
             }
-            finally
-            {
-                _modelLock.Release();
-            }
         }
 
-        public bool IsModelLoaded(string modelId)
-        {
-            return _loadedModels.ContainsKey(modelId);
-        }
-
-        public async Task UnloadModelAsync(string modelId)
+        public async Task LoadModelAsync(string modelId)
         {
             try
             {
-                await _modelLock.WaitAsync();
-
-                if (_loadedModels.TryGetValue(modelId, out var session))
-                {
-                    session.Dispose();
-                    _loadedModels.Remove(modelId);
-                    _logger.LogInformation("Model {ModelId} unloaded", modelId);
-                }
-            }
-            finally
-            {
-                _modelLock.Release();
-            }
-        }
-
-        private async Task LoadModelAsync(string modelId)
-        {
-            try
-            {
-                await _modelLock.WaitAsync();
-
-                // Check if model is already loaded
                 if (_loadedModels.ContainsKey(modelId))
                 {
+                    _logger.LogInformation("Model {ModelId} is already loaded", modelId);
                     return;
                 }
 
-                // Get model info from database
-                using var context = await _contextFactory.CreateDbContextAsync();
-                var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == modelId);
+                RaiseInferenceProgress("Loading model into memory...");
 
+                // Get model data
+                var model = await _modelService.GetModelAsync(modelId);
                 if (model == null)
                 {
                     throw new KeyNotFoundException($"Model {modelId} not found");
@@ -591,118 +183,50 @@ namespace Nexi.Services.AI
 
                 if (model.Status != ModelStatus.Downloaded || string.IsNullOrEmpty(model.LocalPath))
                 {
-                    throw new InvalidOperationException($"Model {modelId} is not downloaded or has no local path");
+                    throw new InvalidOperationException($"Model {modelId} is not downloaded or path is invalid");
                 }
 
-                if (!File.Exists(model.LocalPath))
+                // Create ONNX session options
+                var sessionOptions = new SessionOptions();
+
+                // Check if we should use GPU acceleration
+                var settings = await _modelService.GetUserSettingsAsync();
+                if (settings.UseGPU)
                 {
-                    // File doesn't exist - let's try to fix this by initiating a download
-                    _logger.LogWarning("Model file {Path} not found. Attempting to recover by re-downloading.", model.LocalPath);
-
-                    // Update model status in the database
-                    model.Status = ModelStatus.NotDownloaded;
-                    model.LocalPath = null;
-                    await context.SaveChangesAsync();
-
-                    // Switch to use mock model immediately
-                    _useMockModel = true;
-                    throw new FileNotFoundException($"Model file not found at {model.LocalPath}. Updated status to re-download.");
-                }
-
-                // Check the file size - real ONNX models are typically at least several megabytes
-                var fileInfo = new FileInfo(model.LocalPath);
-                if (fileInfo.Length < 10240) // Less than 10KB is definitely not a valid model
-                {
-                    _logger.LogWarning("Model file {Path} is too small ({Size} bytes). It appears to be a placeholder.",
-                        model.LocalPath, fileInfo.Length);
-
-                    // Option 1: Mark it for re-download
-                    //model.Status = ModelStatus.NotDownloaded;
-                    //model.LocalPath = null;
-                    //await context.SaveChangesAsync();
-
-                    // Option 2: Just use mock model
-                    _useMockModel = true;
-
-                    // Still throw an exception to indicate the model can't be loaded
-                    throw new InvalidOperationException($"Model file is too small to be a valid ONNX model ({fileInfo.Length} bytes)");
-                }
-
-                _logger.LogInformation("Loading model from {Path}", model.LocalPath);
-
-                // Create session options
-                var options = new SessionOptions();
-
-                // Try to use DirectML (GPU acceleration) if enabled
-                bool useGpu = false;
-                var settings = await context.UserSettings.FirstOrDefaultAsync();
-                if (settings != null)
-                {
-                    useGpu = settings.UseGPU;
-                }
-
-                if (useGpu)
-                {
+                    // Try to use CUDA/DirectML
                     try
                     {
-                        options.AppendExecutionProvider_DML(0);
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                        {
+                            // On Windows, try DirectML
+                            sessionOptions.AppendExecutionProvider_DML();
+                            _logger.LogInformation("Using DirectML for GPU acceleration");
+                        }
+                        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                        {
+                            // On Linux, try CUDA
+                            sessionOptions.AppendExecutionProvider_CUDA();
+                            _logger.LogInformation("Using CUDA for GPU acceleration");
+                        }
                     }
-                    catch (EntryPointNotFoundException)
+                    catch (Exception ex)
                     {
-                        _logger.LogWarning("DirectML provider not available, falling back to CPU");
+                        _logger.LogWarning(ex, "Failed to initialize GPU acceleration, falling back to CPU");
                     }
                 }
 
-                try
-                {
-                    // Try to create the inference session
-                    var session = new InferenceSession(model.LocalPath, options);
+                // Load model using ONNX Runtime
+                _logger.LogInformation("Creating inference session for model {ModelId} from {Path}", modelId, model.LocalPath);
 
-                    // Verify the model has at least one input and output
-                    if (session.InputMetadata.Count == 0)
-                    {
-                        throw new InvalidOperationException("Model has no input nodes");
-                    }
+                // This is a simulated load to avoid actual ONNX dependencies
+                // In a real implementation, we would create an InferenceSession
+                await Task.Delay(1000); // Simulate loading time
 
-                    if (session.OutputMetadata.Count == 0)
-                    {
-                        throw new InvalidOperationException("Model has no output nodes");
-                    }
+                // Create a dummy session for demonstration 
+                var session = new InferenceSession(model.LocalPath, sessionOptions);
+                _loadedModels[modelId] = session;
 
-                    // Now we can store the model for future use
-                    _loadedModels[modelId] = session;
-                    _logger.LogInformation("Model {ModelId} loaded successfully with {InputCount} inputs and {OutputCount} outputs",
-                        modelId, session.InputMetadata.Count, session.OutputMetadata.Count);
-
-                    // Log the input and output names for debugging
-                    _logger.LogInformation("Model inputs: {Inputs}", string.Join(", ", session.InputMetadata.Keys));
-                    _logger.LogInformation("Model outputs: {Outputs}", string.Join(", ", session.OutputMetadata.Keys));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error loading ONNX model from {Path}", model.LocalPath);
-
-                    // Check if this is a format issue
-                    bool isFormatIssue = ex.Message.Contains("ModelProto") ||
-                                        ex.Message.Contains("format") ||
-                                        ex.Message.Contains("header") ||
-                                        ex.Message.Contains("magic");
-
-                    if (isFormatIssue)
-                    {
-                        // This is likely a placeholder or corrupted file - mark it for re-download
-                        _logger.LogWarning("Model file appears to be in incorrect format. Marking for re-download.");
-                        model.Status = ModelStatus.NotDownloaded;
-                        model.LocalPath = null;
-                        await context.SaveChangesAsync();
-                    }
-
-                    // Mark the model as having an error
-                    model.Status = ModelStatus.Error;
-                    await context.SaveChangesAsync();
-
-                    throw;
-                }
+                RaiseInferenceProgress($"Model {model.Name} loaded successfully");
             }
             catch (Exception ex)
             {
@@ -710,59 +234,134 @@ namespace Nexi.Services.AI
                 OnError?.Invoke(this, ex);
                 throw;
             }
-            finally
+        }
+
+        public async Task UnloadModelAsync(string modelId)
+        {
+            try
             {
-                _modelLock.Release();
+                if (_loadedModels.TryGetValue(modelId, out var session))
+                {
+                    _logger.LogInformation("Unloading model {ModelId}", modelId);
+                    session.Dispose();
+                    _loadedModels.Remove(modelId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unloading model {ModelId}", modelId);
+                OnError?.Invoke(this, ex);
+                throw;
             }
         }
-        private void ReportProgress(string message)
+
+        private async Task DownloadFileAsync(string url, string destinationPath, IProgress<double>? progress = null)
+        {
+            try
+            {
+                // Ensure the destination directory exists
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+
+                using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+
+                // Check for specific errors
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    _logger.LogError("Authentication required for {Url}. Using a different model source is recommended.", url);
+                    throw new UnauthorizedAccessException($"Authentication required to download model from {url}. Please try a different model.");
+                }
+
+                response.EnsureSuccessStatusCode();
+
+                var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                var canReportProgress = totalBytes != -1L && progress != null;
+
+                using var contentStream = await response.Content.ReadAsStreamAsync();
+                using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+                var buffer = new byte[8192];
+                var totalBytesRead = 0L;
+                var bytesRead = 0;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer, 0, bytesRead);
+                    totalBytesRead += bytesRead;
+
+                    if (canReportProgress)
+                    {
+                        var progressValue = (double)totalBytesRead / totalBytes;
+                        progress!.Report(progressValue);
+
+                        if (totalBytesRead % (1024 * 1024) == 0) // Log every MB
+                        {
+                            RaiseInferenceProgress($"Downloaded {totalBytesRead / (1024 * 1024)} MB of {totalBytes / (1024 * 1024)} MB");
+                        }
+                    }
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "Authentication error downloading file from {Url} to {Path}", url, destinationPath);
+                throw; // Rethrow the specific exception
+            }
+            catch (HttpRequestException ex)
+            {
+                if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _logger.LogError("Model file not found at {Url}. The file may have been moved or deleted.", url);
+                    throw new FileNotFoundException($"Model file not found at {url}. Please try a different model.", destinationPath);
+                }
+
+                _logger.LogError(ex, "Error downloading file from {Url} to {Path}", url, destinationPath);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error downloading file from {Url} to {Path}", url, destinationPath);
+                throw;
+            }
+        }
+
+        private void ExtractArchive(string archivePath, string destinationPath)
+        {
+            try
+            {
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries)
+                {
+                    if (!entry.IsDirectory)
+                    {
+                        _logger.LogInformation("Extracting {Entry}", entry.Key);
+                        entry.WriteToDirectory(destinationPath, new ExtractionOptions
+                        {
+                            ExtractFullPath = true,
+                            Overwrite = true
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting archive {Path}", archivePath);
+                throw;
+            }
+        }
+
+        private string FormatConversationHistory(IEnumerable<(bool IsUser, string Message)> history)
+        {
+            var formattedHistory = new System.Text.StringBuilder();
+            foreach (var (isUser, message) in history)
+            {
+                formattedHistory.AppendLine(isUser ? $"User: {message}" : $"Assistant: {message}");
+            }
+            return formattedHistory.ToString().Trim();
+        }
+
+        private void RaiseInferenceProgress(string message)
         {
             _logger.LogInformation(message);
             OnInferenceProgress?.Invoke(this, message);
-        }
-
-        private string FormatPromptWithHistory(IEnumerable<(bool IsUser, string Message)> history, string prompt, string systemPrompt)
-        {
-            var sb = new StringBuilder();
-
-            // Add system prompt if provided
-            if (!string.IsNullOrEmpty(systemPrompt))
-            {
-                sb.AppendLine($"System: {systemPrompt}");
-                sb.AppendLine();
-            }
-
-            // Add conversation history
-            foreach (var (isUser, message) in history)
-            {
-                sb.AppendLine($"{(isUser ? "User: " : "Assistant: ")}{message}");
-            }
-
-            // Add current prompt
-            sb.AppendLine($"User: {prompt}");
-            sb.AppendLine("Assistant:");
-
-            return sb.ToString();
-        }
-
-        private long[] Tokenize(string text)
-        {
-            // This is a very simplified tokenization approach
-            // In a real implementation, you would use a proper tokenizer matched to your model
-
-            // For demonstration purposes, let's just map characters to token IDs
-            var tokens = new List<long>();
-
-            foreach (char c in text)
-            {
-                tokens.Add((long)c);
-            }
-
-            // Add special tokens
-            tokens.Insert(0, 101); // [CLS] token (commonly used in BERT-like models)
-            tokens.Add(102); // [SEP] token
-
-            return tokens.ToArray();
         }
 
         public void Dispose()
@@ -773,10 +372,8 @@ namespace Nexi.Services.AI
                 {
                     session.Dispose();
                 }
-
                 _loadedModels.Clear();
-                _modelLock.Dispose();
-
+                _httpClient.Dispose();
                 _disposed = true;
             }
         }

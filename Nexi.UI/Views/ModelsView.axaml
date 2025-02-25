@@ -22,11 +22,11 @@
                    FontSize="32"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource SystemAccentColor}"/>
-          <TextBlock Text="Manage your AI models"
+          <TextBlock Text="Manage your AI models - all completely free and open-source"
                    FontSize="16"
                    Opacity="0.7"/>
         </StackPanel>
-        
+
         <Button Grid.Column="1"
                 Command="{CompiledBinding RefreshModelsCommand}"
                 ToolTip.Tip="Refresh models"
@@ -37,112 +37,196 @@
       </Grid>
     </Border>
 
-    <!-- Models List -->
-    <ScrollViewer Grid.Row="1">
-      <ItemsControl ItemsSource="{CompiledBinding AvailableModels}"
-                   Margin="32">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <StackPanel Spacing="16"/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:ModelItemViewModel">
-            <Border Background="{DynamicResource SystemChromeMediumColor}"
-                    CornerRadius="12"
-                    BoxShadow="0 2 8 0 #30000000">
-              <Grid ColumnDefinitions="Auto,*,Auto" Margin="24,20">
-                <!-- Icon -->
-                <Border Grid.Column="0"
-                        Width="48"
-                        Height="48"
-                        CornerRadius="24"
-                        Background="{DynamicResource SystemAccentColor}">
-                  <material:MaterialIcon Kind="Brain"
-                                       Width="24"
-                                       Height="24"
-                                       Foreground="White"/>
-                </Border>
+    <!-- Content Area with Filter Bar and Models List -->
+    <Grid Grid.Row="1" RowDefinitions="Auto,*">
+      <!-- Filter Bar -->
+      <Border Grid.Row="0"
+              Background="{DynamicResource SystemChromeLowColor}"
+              Padding="32,12">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <!-- Category Filter -->
+          <ComboBox Grid.Column="0"
+                    ItemsSource="{CompiledBinding Categories}"
+                    SelectedItem="{CompiledBinding SelectedCategory}"
+                    Width="150"
+                    Margin="0,0,16,0"
+                    ToolTip.Tip="Filter by model category"/>
 
-                <!-- Model Info -->
-                <StackPanel Grid.Column="1"
-                          Margin="20,0"
-                          VerticalAlignment="Center"
-                          Spacing="4">
-                  <TextBlock Text="{CompiledBinding Name}"
-                           FontSize="18"
-                           FontWeight="SemiBold"/>
-                  <TextBlock Text="{CompiledBinding Description}"
-                           FontSize="14"
-                           Opacity="0.7"/>
-                  <StackPanel Orientation="Horizontal"
-                            Spacing="16"
-                            Margin="0,8,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <material:MaterialIcon Kind="Database"
-                                           Opacity="0.7"/>
-                      <TextBlock Text="{CompiledBinding Size}"
-                               Opacity="0.7"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <material:MaterialIcon Kind="Tag"
-                                           Opacity="0.7"/>
-                      <TextBlock Text="{CompiledBinding Version}"
-                               Opacity="0.7"/>
-                    </StackPanel>
-                  </StackPanel>
-                  
-                  <!-- Progress Bar (only visible when downloading) -->
-                  <ProgressBar Value="{CompiledBinding DownloadProgress}"
-                             IsVisible="{CompiledBinding IsDownloading}"
-                             Maximum="1.0"
-                             Height="4"
-                             Margin="0,8,0,0"/>
-                </StackPanel>
+          <!-- Search Box -->
+          <TextBox Grid.Column="1"
+                   Text="{CompiledBinding SearchQuery}"
+                   Watermark="Search models..."
+                   Margin="0,0,16,0">
+            <TextBox.InnerLeftContent>
+              <material:MaterialIcon Kind="Magnify"
+                                     Margin="8,0,0,0"
+                                     Width="16"
+                                     Height="16"/>
+            </TextBox.InnerLeftContent>
+            <TextBox.InnerRightContent>
+              <Button Command="{CompiledBinding ClearSearchCommand}"
+                      IsVisible="{CompiledBinding !!SearchQuery}"
+                      Width="30"
+                      Height="30"
+                      Background="Transparent"
+                      Margin="0,0,4,0">
+                <material:MaterialIcon Kind="Close" Width="16" Height="16"/>
+              </Button>
+            </TextBox.InnerRightContent>
+          </TextBox>
 
-                <!-- Actions -->
-                <StackPanel Grid.Column="2"
-                          Spacing="8"
-                          VerticalAlignment="Center">
-                  <!-- Status Badge -->
-                  <Border Background="{CompiledBinding Status, Converter={StaticResource ModelStatusToBrushConverter}}"
-                          CornerRadius="20"
-                          Padding="16,8"
-                          HorizontalAlignment="Right">
-                    <TextBlock Text="{CompiledBinding Status}"
-                             FontSize="14"
-                             Foreground="White"/>
+          <!-- Show Only Downloaded Toggle -->
+          <ToggleButton Grid.Column="2"
+                        IsChecked="{CompiledBinding ShowOnlyDownloaded}"
+                        Content="Show Installed"
+                        Margin="0,0,16,0"
+                        Width="130"
+                        ToolTip.Tip="Show only installed models"/>
+
+          <!-- Refresh Button -->
+          <Button Grid.Column="3"
+                  Command="{CompiledBinding RefreshModelsCommand}"
+                  Content="Refresh"
+                  Width="80"/>
+        </Grid>
+      </Border>
+
+      <!-- Models List -->
+      <ScrollViewer Grid.Row="1">
+        <ItemsControl ItemsSource="{CompiledBinding FilteredModels}"
+                      Margin="32,16">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ModelItemViewModel">
+              <Border Background="{DynamicResource SystemChromeMediumColor}"
+                      CornerRadius="12"
+                      BoxShadow="0 2 8 0 #30000000"
+                      Width="360"
+                      Margin="0,0,16,16">
+                <Grid RowDefinitions="Auto,*,Auto">
+                  <!-- Header with Category Badge -->
+                  <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="24,16,24,0">
+                    <Border Grid.Column="0"
+                            Background="{CompiledBinding BackgroundColor}"
+                            CornerRadius="12"
+                            Padding="12,6"
+                            HorizontalAlignment="Left">
+                      <TextBlock Text="{CompiledBinding Category}"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Foreground="White"/>
+                    </Border>
+
+                    <!-- Status Badge -->
+                    <Border Grid.Column="1"
+                            Background="{CompiledBinding Status, Converter={StaticResource ModelStatusToBrushConverter}}"
+                            CornerRadius="12"
+                            Padding="12,6">
+                      <TextBlock Text="{CompiledBinding StatusText}"
+                                FontSize="14"
+                                Foreground="White"/>
+                    </Border>
+                  </Grid>
+
+                  <!-- Main Content -->
+                  <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="24,16">
+                    <!-- Icon and Name -->
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+                      <Border Grid.Column="0"
+                              Width="48"
+                              Height="48"
+                              CornerRadius="24"
+                              Background="{CompiledBinding BackgroundColor}">
+                        <material:MaterialIcon Kind="Brain"
+                                               Width="24"
+                                               Height="24"
+                                               Foreground="White"/>
+                      </Border>
+
+                      <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{CompiledBinding Name}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+                        <TextBlock Text="{CompiledBinding Size}"
+                                   FontSize="14"
+                                   Opacity="0.7"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <!-- Description -->
+                    <TextBlock Grid.Row="1"
+                               Text="{CompiledBinding Description}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+
+                    <!-- Supported Tasks -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+                      <TextBlock Text="Capabilities: " FontWeight="SemiBold"/>
+                      <TextBlock Text="{CompiledBinding TasksDisplay}" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- Version Info -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <material:MaterialIcon Kind="Tag"
+                                               Opacity="0.7"/>
+                        <TextBlock Text="{CompiledBinding Version}"
+                                   Opacity="0.7"/>
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- Progress Bar (only visible when downloading) -->
+                    <ProgressBar Grid.Row="4"
+                                 Value="{CompiledBinding DownloadProgress}"
+                                 IsVisible="{CompiledBinding IsDownloading}"
+                                 Maximum="1.0"
+                                 Height="4"
+                                 Margin="0,16,0,0"/>
+                  </Grid>
+
+                  <!-- Actions Footer -->
+                  <Border Grid.Row="2"
+                          Background="{DynamicResource SystemChromeLowColor}"
+                          Padding="24,12"
+                          CornerRadius="0,0,12,12">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <!-- Info Text -->
+                      <TextBlock Grid.Column="0"
+                                 Text="{CompiledBinding StatusText}"
+                                 VerticalAlignment="Center"/>
+
+                      <!-- Action Buttons -->
+                      <StackPanel Grid.Column="1"
+                                 Orientation="Horizontal"
+                                 Spacing="8">
+                        <!-- Download Button - only shown for NotDownloaded models -->
+                        <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DownloadModelCommand}"
+                                CommandParameter="{CompiledBinding Id}"
+                                Content="Download"
+                                Classes="accent-button"
+                                IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.NotDownloaded}}"/>
+
+                        <!-- Delete Button - only shown for Downloaded models -->
+                        <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DeleteModelCommand}"
+                                CommandParameter="{CompiledBinding Id}"
+                                Content="Remove"
+                                Classes="danger-button"
+                                IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.Downloaded}}"/>
+                      </StackPanel>
+                    </Grid>
                   </Border>
-                  
-                  <!-- Action Buttons -->
-                  <StackPanel Orientation="Horizontal" 
-                            Spacing="8"
-                            HorizontalAlignment="Right"
-                            Margin="0,8,0,0">
-                    <!-- Download Button - only shown for NotDownloaded models -->
-                    <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DownloadModelCommand}"
-                            CommandParameter="{CompiledBinding Id}"
-                            Classes="action-button"
-                            IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.NotDownloaded}}">
-                      <material:MaterialIcon Kind="Download"/>
-                    </Button>
-                    
-                    <!-- Delete Button - only shown for Downloaded models -->
-                    <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DeleteModelCommand}"
-                            CommandParameter="{CompiledBinding Id}"
-                            Classes="action-button"
-                            IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.Downloaded}}">
-                      <material:MaterialIcon Kind="Delete"/>
-                    </Button>
-                  </StackPanel>
-                </StackPanel>
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
-    
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Grid>
+
     <!-- Status Bar -->
     <Border Grid.Row="2"
             Background="{DynamicResource SystemChromeMediumColor}"
@@ -174,22 +258,41 @@
       <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
       <Setter Property="Foreground" Value="White"/>
     </Style>
-    
-    <Style Selector="Button.action-button">
-      <Setter Property="Width" Value="36"/>
-      <Setter Property="Height" Value="36"/>
-      <Setter Property="CornerRadius" Value="18"/>
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}"/>
+
+    <Style Selector="Button.accent-button">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
       <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="CornerRadius" Value="4"/>
     </Style>
-    
+
+    <Style Selector="Button.danger-button">
+      <Setter Property="Background" Value="#E53935"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
     <Style Selector="material|MaterialIcon">
       <Setter Property="Width" Value="20"/>
       <Setter Property="Height" Value="20"/>
     </Style>
-    
+
     <Style Selector="ProgressBar">
       <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+    </Style>
+
+    <Style Selector="ToggleButton">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
+    <Style Selector="ToggleButton:checked">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorDark1}"/>
     </Style>
   </UserControl.Styles>
 </UserControl>

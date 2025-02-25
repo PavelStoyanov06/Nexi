@@ -1,11 +1,18 @@
 ﻿using System;
 using System.IO;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.ReactiveUI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
+using Nexi.Services;
+using Nexi.Services.AI;
+using Nexi.Services.Interfaces;
+using Nexi.UI;
+using Nexi.UI.ViewModels;
 
 namespace Nexi.UI.Desktop
 {
@@ -18,22 +25,83 @@ namespace Nexi.UI.Desktop
         // Note: This is internal, not public
         internal static AppBuilder BuildAvaloniaApp()
         {
-            var configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: false)
-                .Build();
+            // Create a configuration, with graceful fallback for different environments
+            IConfiguration configuration;
+            try
+            {
+                // Try to find appsettings.json in the executable directory
+                string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
 
+                if (File.Exists(configPath))
+                {
+                    configuration = new ConfigurationBuilder()
+                        .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+                        .AddJsonFile("appsettings.json", optional: true)
+                        .Build();
+                }
+                else
+                {
+                    // If not found, use default connection string
+                    Console.WriteLine("No appsettings.json found. Using default connection string.");
+                    configuration = new ConfigurationBuilder()
+                        .AddInMemoryCollection(new Dictionary<string, string>
+                        {
+                            { "ConnectionStrings:DefaultConnection", "Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true" }
+                        })
+                        .Build();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Use default configuration in case of error
+                Console.WriteLine($"Error loading configuration: {ex.Message}. Using default values.");
+                configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string>
+                    {
+                        { "ConnectionStrings:DefaultConnection", "Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true" }
+                    })
+                    .Build();
+            }
+
+            // Set up services
             var services = new ServiceCollection();
+
+            // Add DbContext
             services.AddDbContext<NexiDbContext>(options =>
                 options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+            // Add DbContextFactory for use in services
+            services.AddDbContextFactory<NexiDbContext>(options =>
+                options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+            // Add logging
+            services.AddLogging(config =>
+            {
+                config.AddConsole();
+                config.AddDebug();
+            });
+
+            // Register services
+            services.AddSingleton<ICommandProcessor, CommandProcessor>();
+            services.AddSingleton<IVoiceService, VoiceService>();
+            services.AddSingleton<IChatStorageService, ChatStorageService>();
+            services.AddSingleton<IAIModelService, AIModelService>();
+            services.AddSingleton<IUserSettingsService, UserSettingsService>();
+            services.AddSingleton<IModelRepository, ModelRepository>();
+            services.AddSingleton<IAIService, OnnxAIService>();
+
+            // Register view models
+            services.AddTransient<MainViewModel>();
+            services.AddTransient<ChatHistoryViewModel>();
+            services.AddTransient<ModelsViewModel>();
+            services.AddTransient<SettingsViewModel>();
 
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace()
-                .UseReactiveUI();
+                .UseReactiveUI()
+                .WithServices(services);
         }
-
-
     }
 }
