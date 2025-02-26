@@ -13,6 +13,7 @@ using Nexi.Services.AI;
 using Nexi.Services.Interfaces;
 using Nexi.UI;
 using Nexi.UI.ViewModels;
+using Interfaces;
 
 namespace Nexi.UI.Desktop
 {
@@ -81,7 +82,9 @@ namespace Nexi.UI.Desktop
                 config.AddDebug();
             });
 
-            // Register services
+            services.AddSingleton<IAuthenticationService, AuthenticationService>();
+
+            // It should look something like this:
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
             services.AddSingleton<IChatStorageService, ChatStorageService>();
@@ -89,12 +92,14 @@ namespace Nexi.UI.Desktop
             services.AddSingleton<IUserSettingsService, UserSettingsService>();
             services.AddSingleton<IModelRepository, ModelRepository>();
             services.AddSingleton<IAIService, OnnxAIService>();
+            services.AddSingleton<IAuthenticationService, AuthenticationService>(); // Add this line
 
             // Register view models
             services.AddTransient<MainViewModel>();
             services.AddTransient<ChatHistoryViewModel>();
             services.AddTransient<ModelsViewModel>();
             services.AddTransient<SettingsViewModel>();
+            services.AddTransient<ApiTokensViewModel>();
 
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()

@@ -4,9 +4,8 @@ using Nexi.Data.Context;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
 using System.Text.Json;
-using System.Net.Http;
 
-namespace Nexi.Services
+namespace Nexi.Services.AI
 {
     public class ModelRepository : IModelRepository
     {

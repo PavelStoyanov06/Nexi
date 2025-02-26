@@ -105,6 +105,8 @@ namespace Nexi.Services.AI
             }
         }
 
+        // Update for OnnxAIService.cs - DownloadModelAsync method
+
         public async Task DownloadModelAsync(string modelId, IProgress<double>? progress = null)
         {
             try
@@ -134,8 +136,65 @@ namespace Nexi.Services.AI
                 var fileName = $"{modelId}{extension}";
                 var filePath = Path.Combine(modelDir, fileName);
 
-                // Download the file
-                await DownloadFileAsync(modelInfo.DownloadUrl, filePath, progress);
+                // Check if this model requires authentication
+                bool requiresAuth = modelInfo.DownloadUrl.Contains("huggingface.co/api/models") ||
+                                modelInfo.Metadata.TryGetValue("RequiresAuth", out var authValue) &&
+                                authValue.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                if (requiresAuth)
+                {
+                    try
+                    {
+                        RaiseInferenceProgress("Model requires authentication. Checking for credentials...");
+
+                        // Get the authentication service
+                        var authService = _serviceProvider.GetRequiredService<IAuthenticationService>();
+
+                        // Use ModelRepository for authenticated download
+                        var modelRepository = _serviceProvider.GetRequiredService<IModelRepository>();
+                        if (modelRepository is ModelRepository repo)
+                        {
+                            // This will handle prompting for token if needed
+                            byte[] fileData = await repo.DownloadModelWithAuthAsync(
+                                modelInfo.DownloadUrl,
+                                "HuggingFace",
+                                model.Name,
+                                authService,
+                                _logger);
+
+                            RaiseInferenceProgress($"Authentication successful. Writing file to {filePath}...");
+
+                            // Write downloaded data to file
+                            await File.WriteAllBytesAsync(filePath, fileData);
+
+                            // Report full progress
+                            progress?.Report(1.0);
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Authenticated download required but not supported by the current implementation");
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        RaiseInferenceProgress("Download canceled by user");
+                        await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
+                        OnError?.Invoke(this, new Exception("Authentication required but download was canceled"));
+                        throw;
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        RaiseInferenceProgress($"Authentication failed: {ex.Message}");
+                        await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
+                        OnError?.Invoke(this, ex);
+                        throw;
+                    }
+                }
+                else
+                {
+                    // Standard download without authentication
+                    await DownloadFileAsync(modelInfo.DownloadUrl, filePath, progress);
+                }
 
                 // Handle extraction if the file is compressed
                 if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) ||

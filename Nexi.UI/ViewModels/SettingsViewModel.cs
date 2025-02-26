@@ -1,6 +1,8 @@
 ﻿using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nexi.Data.Models;
+using Nexi.Services.AI;
 using Nexi.Services.Interfaces;
 using ReactiveUI;
 using System;
@@ -21,6 +23,7 @@ namespace Nexi.UI.ViewModels
         private readonly IAIModelService _aiModelService;
         private readonly IVoiceService _voiceService;
         private readonly ILogger<SettingsViewModel> _logger;
+        private ApiTokensViewModel _apiTokensViewModel;
 
         private int _selectedModelIndex;
         private bool _useGPU;
@@ -41,13 +44,19 @@ namespace Nexi.UI.ViewModels
             IAIModelService aiModelService,
             IVoiceService voiceService,
             ILogger<SettingsViewModel> logger,
-            IChatStorageService chatStorageService)
+            IChatStorageService chatStorageService,
+            TokenService tokenService)
         {
             _userSettingsService = userSettingsService;
             _aiModelService = aiModelService;
             _voiceService = voiceService;
             _logger = logger;
             _chatStorageService = chatStorageService;
+
+            // Initialize the API Tokens ViewModel
+            _apiTokensViewModel = new ApiTokensViewModel(
+                tokenService,
+                App.Services.GetRequiredService<ILogger<ApiTokensViewModel>>());
 
             _availableModels = new ObservableCollection<AIModelData>();
             _inputDevices = new ObservableCollection<string>();
@@ -80,6 +89,12 @@ namespace Nexi.UI.ViewModels
 
             // Load settings
             _ = LoadSettingsAsync();
+        }
+
+        public ApiTokensViewModel ApiTokensViewModel
+        {
+            get => _apiTokensViewModel;
+            private set => this.RaiseAndSetIfChanged(ref _apiTokensViewModel, value);
         }
 
         public ObservableCollection<AIModelData> AvailableModels

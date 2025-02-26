@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:material="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Nexi.UI.Views.ApiTokensSettingsView"
+             x:CompileBindings="True"
+             x:DataType="vm:ApiTokensViewModel">
+
+  <Border Background="{DynamicResource SystemChromeMediumColor}"
+          CornerRadius="12"
+          BoxShadow="0 2 8 0 #30000000">
+    <StackPanel Margin="24,20">
+      <!-- Header -->
+      <StackPanel Orientation="Horizontal"
+                Spacing="12"
+                Margin="0,0,0,16">
+        <material:MaterialIcon Kind="Key"
+                             Width="24"
+                             Height="24"
+                             Foreground="{DynamicResource SystemAccentColor}"/>
+        <TextBlock Text="API Tokens"
+                 FontSize="20"
+                 FontWeight="SemiBold"/>
+      </StackPanel>
+
+      <!-- Information Panel -->
+      <Border Background="{DynamicResource SystemChromeLowColor}"
+              CornerRadius="8"
+              Padding="16"
+              Margin="0,0,0,16">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Why API Tokens Are Required"
+                   FontWeight="SemiBold"/>
+          <TextBlock TextWrapping="Wrap">
+            Some AI models require authentication for download due to licensing restrictions,
+            usage tracking, or resource management. Rather than embedding tokens in the application
+            (which would compromise security), Nexi asks you to provide your own tokens.
+          </TextBlock>
+          <Button Content="Learn how to create a HuggingFace token"
+                Command="{CompiledBinding OpenHuggingFaceTokenPageCommand}"
+                Margin="0,8,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <!-- HuggingFace Token Input -->
+      <StackPanel Spacing="4" Margin="0,8,0,0">
+        <TextBlock Text="HuggingFace Access Token" FontWeight="SemiBold"/>
+        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+          <TextBox Grid.Column="0"
+                Text="{CompiledBinding HuggingFaceToken}"
+                PasswordChar="•"
+                Watermark="Enter your HuggingFace token"
+                MaxWidth="500"/>
+
+          <ToggleButton Grid.Column="1"
+                      Margin="8,0,0,0"
+                      IsChecked="{CompiledBinding ShowHuggingFaceToken}"
+                      ToolTip.Tip="Show/Hide Token">
+            <material:MaterialIcon Kind="{CompiledBinding ShowHuggingFaceToken, Converter={StaticResource BoolToVisibilityIconConverter}}"/>
+          </ToggleButton>
+        </Grid>
+        <TextBlock Text="Your token is stored securely and encrypted on your device."
+                 Opacity="0.7"
+                 FontSize="12"
+                 Margin="0,4,0,0"/>
+        <TextBlock Text="Access tokens allow you to download models that require authentication."
+                 Opacity="0.7"
+                 FontSize="12"/>
+      </StackPanel>
+
+      <!-- Save Button -->
+      <StackPanel Orientation="Horizontal" Margin="0,16,0,0" Spacing="8">
+        <Button Content="Save Token"
+              Command="{CompiledBinding SaveHuggingFaceTokenCommand}"
+              Classes="accent-button"/>
+        <Button Content="Clear Token"
+              Command="{CompiledBinding ClearHuggingFaceTokenCommand}"/>
+      </StackPanel>
+
+      <!-- Status Message -->
+      <TextBlock Text="{CompiledBinding StatusMessage}"
+               Margin="0,16,0,0"
+               Foreground="{CompiledBinding StatusIsError, Converter={StaticResource BoolToErrorBrushConverter}}"/>
+    </StackPanel>
+  </Border>
+</UserControl>

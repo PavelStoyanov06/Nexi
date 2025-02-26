@@ -3,11 +3,8 @@ using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 
-namespace Nexi.Services
+namespace Nexi.Services.AI
 {
     public class AIModelService : IAIModelService
     {
