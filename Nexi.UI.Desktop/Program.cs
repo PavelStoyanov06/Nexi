@@ -1,8 +1,6 @@
-﻿using System;
-using System.IO;
-using System.Collections.Generic;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.ReactiveUI;
+using Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,9 +9,10 @@ using Nexi.Data.Context;
 using Nexi.Services;
 using Nexi.Services.AI;
 using Nexi.Services.Interfaces;
-using Nexi.UI;
 using Nexi.UI.ViewModels;
-using Interfaces;
+using System;
+using System.Collections.Generic;
+using System.IO;
 
 namespace Nexi.UI.Desktop
 {
@@ -90,8 +89,14 @@ namespace Nexi.UI.Desktop
             services.AddSingleton<IChatStorageService, ChatStorageService>();
             services.AddSingleton<IAIModelService, AIModelService>();
             services.AddSingleton<IUserSettingsService, UserSettingsService>();
-            services.AddSingleton<IModelRepository, ModelRepository>();
-            services.AddSingleton<IAIService, OnnxAIService>();
+            services.AddSingleton<IModelRepository>(sp => new ModelRepository(
+                    sp.GetRequiredService<IDbContextFactory<NexiDbContext>>(),
+                    sp.GetRequiredService<ILogger<ModelRepository>>(),
+                    sp));
+            services.AddSingleton<IAIService>(sp => new OnnxAIService(
+                    sp.GetRequiredService<ILogger<OnnxAIService>>(),
+                    sp.GetRequiredService<IAIModelService>(),
+                    sp));
             services.AddSingleton<IAuthenticationService, AuthenticationService>(); // Add this line
 
             // Register view models

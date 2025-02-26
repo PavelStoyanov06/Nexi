@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Nexi.UI.ViewModels;
-using System;
 
 namespace Nexi.UI.Views
 {
@@ -20,10 +19,7 @@ namespace Nexi.UI.Views
                     Close(result);
                 };
             }
-
-#if DEBUG
             this.AttachDevTools();
-#endif
         }
 
         private void InitializeComponent()

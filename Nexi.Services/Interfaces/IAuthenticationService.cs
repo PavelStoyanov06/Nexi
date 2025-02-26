@@ -26,6 +26,8 @@ namespace Interfaces
         /// </summary>
         Task ClearTokenAsync(string provider);
 
+        Task<string> RequestAuthenticationAsync(string provider, string resourceName);
+
         /// <summary>
         /// Event that's raised when authentication is required but no token is available
         /// </summary>

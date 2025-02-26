@@ -4,6 +4,7 @@
     {
         Local,
         OpenAI,
-        AzureOpenAI
+        AzureOpenAI,
+        HuggingFace
     }
 }

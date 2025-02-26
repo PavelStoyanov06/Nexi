@@ -7,6 +7,8 @@ using System.Runtime.InteropServices;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using Microsoft.ML.OnnxRuntime;
+using Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Nexi.Services.AI
 {
@@ -18,16 +20,19 @@ namespace Nexi.Services.AI
         private readonly Dictionary<string, InferenceSession> _loadedModels = new();
         private readonly string _modelsBasePath;
         private bool _disposed;
+        private readonly IServiceProvider _serviceProvider;
 
         public event EventHandler<string>? OnInferenceProgress;
         public event EventHandler<Exception>? OnError;
 
         public OnnxAIService(
             ILogger<OnnxAIService> logger,
-            IAIModelService modelService)
+            IAIModelService modelService,
+            IServiceProvider serviceProvider) // Add this parameter
         {
             _logger = logger;
             _modelService = modelService;
+            _serviceProvider = serviceProvider; // Store the service provider
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromMinutes(30); // Long timeout for large downloads
 

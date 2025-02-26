@@ -1,4 +1,5 @@
 ﻿using Avalonia.Threading;
+using Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nexi.Data.Models;
@@ -45,7 +46,7 @@ namespace Nexi.UI.ViewModels
             IVoiceService voiceService,
             ILogger<SettingsViewModel> logger,
             IChatStorageService chatStorageService,
-            TokenService tokenService)
+            IAuthenticationService authService)
         {
             _userSettingsService = userSettingsService;
             _aiModelService = aiModelService;
@@ -53,9 +54,9 @@ namespace Nexi.UI.ViewModels
             _logger = logger;
             _chatStorageService = chatStorageService;
 
-            // Initialize the API Tokens ViewModel
+            // Initialize the API Tokens ViewModel with IAuthenticationService
             _apiTokensViewModel = new ApiTokensViewModel(
-                tokenService,
+                authService,
                 App.Services.GetRequiredService<ILogger<ApiTokensViewModel>>());
 
             _availableModels = new ObservableCollection<AIModelData>();

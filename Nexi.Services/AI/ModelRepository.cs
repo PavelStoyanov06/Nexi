@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Nexi.Data.Models;
@@ -14,26 +15,31 @@ namespace Nexi.Services.AI
         private readonly HttpClient _httpClient;
         private readonly string _modelCachePath;
         private readonly TimeSpan _cacheExpiration = TimeSpan.FromHours(12);
+        private readonly IServiceProvider _serviceProvider;
 
         // Model Repository URLs - using Microsoft ONNX Model Zoo and other public sources
         private const string ONNX_MODEL_ZOO = "https://github.com/onnx/models/tree/main/";
 
         public ModelRepository(
-            IDbContextFactory<NexiDbContext> contextFactory,
-            ILogger<ModelRepository> logger)
+    IDbContextFactory<NexiDbContext> contextFactory,
+    ILogger<ModelRepository> logger,
+    IServiceProvider serviceProvider) // Add this parameter
         {
             _contextFactory = contextFactory;
             _logger = logger;
+            _serviceProvider = serviceProvider; // Store the service provider
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+            _httpClient.Timeout = TimeSpan.FromMinutes(2); // Increased timeout for API requests
 
             _modelCachePath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Nexi", "OnnxModelCache.json");
+                "Nexi", "ModelCache.json");
 
             // Ensure the directory exists
             Directory.CreateDirectory(Path.GetDirectoryName(_modelCachePath));
         }
+
 
         public async Task<IEnumerable<ModelInfo>> GetAvailableModelsAsync()
         {
@@ -42,30 +48,60 @@ namespace Nexi.Services.AI
                 // Check if we have a cached response that's not expired
                 if (TryGetCachedModels(out var cachedModels))
                 {
-                    _logger.LogInformation("Returning {Count} cached ONNX models", cachedModels.Count());
+                    _logger.LogInformation("Returning {Count} cached models", cachedModels.Count());
                     return cachedModels;
                 }
 
-                // Use our built-in reliable models
-                var models = GetBuiltInOnnxModels();
+                // Get models from HuggingFace - this is now our primary source
+                var huggingFaceModels = await FetchOnnxModelsFromHuggingFaceAsync();
+                List<ModelInfo> allModels;
+
+                if (huggingFaceModels.Any())
+                {
+                    // We successfully got models from HuggingFace
+                    _logger.LogInformation("Successfully fetched {Count} models from HuggingFace", huggingFaceModels.Count());
+                    allModels = huggingFaceModels.ToList();
+
+                    // Add a few built-in models as fallback for offline usage
+                    var builtInModels = GetBuiltInOnnxModels();
+
+                    // Add built-in models that don't clash with HuggingFace IDs
+                    var existingIds = allModels.Select(m => m.Id).ToHashSet();
+                    foreach (var model in builtInModels)
+                    {
+                        if (!existingIds.Contains(model.Id))
+                        {
+                            // Mark as built-in
+                            model.Metadata["Source"] = "BuiltIn";
+                            allModels.Add(model);
+                        }
+                    }
+                }
+                else
+                {
+                    // Couldn't get models from HuggingFace, fall back to built-in
+                    _logger.LogWarning("Failed to get models from HuggingFace, using built-in models instead");
+                    allModels = GetBuiltInOnnxModels().ToList();
+                }
 
                 // Save models to database
-                await SaveModelsToDbAsync(models);
+                await SaveModelsToDbAsync(allModels);
 
                 // Cache the models
-                await CacheModelsAsync(models);
+                await CacheModelsAsync(allModels);
 
-                _logger.LogInformation("Returning {Count} ONNX models", models.Count);
-                return models;
+                _logger.LogInformation("Returning {Count} models (HuggingFace + built-in)", allModels.Count);
+                return allModels;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting available ONNX models");
+                _logger.LogError(ex, "Error getting available models");
 
                 // Fall back to built-in models in case of failure
                 return GetBuiltInOnnxModels();
             }
         }
+
 
         public async Task<ModelInfo?> GetModelInfoAsync(string id)
         {
@@ -380,8 +416,134 @@ namespace Nexi.Services.AI
         // This method is deliberately disabled to avoid unauthorized access errors
         private async Task<IEnumerable<ModelInfo>> FetchOnnxModelsFromHuggingFaceAsync()
         {
-            _logger.LogInformation("Hugging Face model fetching disabled to avoid authentication requirements");
-            return new List<ModelInfo>();
+            try
+            {
+                _logger.LogInformation("Fetching models from HuggingFace API");
+
+                // Check if we have a token for authenticated requests
+                var authService = _serviceProvider.GetService(typeof(IAuthenticationService)) as IAuthenticationService;
+                string? token = null;
+                bool isAuthenticated = false;
+
+                if (authService != null)
+                {
+                    try
+                    {
+                        token = await authService.GetTokenAsync("HuggingFace");
+                        isAuthenticated = !string.IsNullOrEmpty(token);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to get HuggingFace token, continuing with unauthenticated requests");
+                    }
+                }
+
+                // Base API URL for HuggingFace - requesting a larger number of models
+                string apiUrl = "https://huggingface.co/api/models?limit=200&filter=onnx";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+
+                // Add authentication if available
+                if (isAuthenticated)
+                {
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                }
+
+                // Add user agent
+                request.Headers.Add("User-Agent", "Nexi-App/1.0");
+
+                // Make the request
+                using var response = await _httpClient.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+
+                string jsonResponse = await response.Content.ReadAsStringAsync();
+
+                // Parse the JSON response
+                using var document = System.Text.Json.JsonDocument.Parse(jsonResponse);
+                var models = new List<ModelInfo>();
+
+                foreach (var element in document.RootElement.EnumerateArray())
+                {
+                    try
+                    {
+                        // Basic properties
+                        string id = element.GetProperty("id").GetString() ?? "";
+                        string modelId = id.Replace("/", "-").ToLowerInvariant();
+
+                        // Check if we can find a name
+                        string modelName;
+                        if (element.TryGetProperty("modelId", out var modelIdElement))
+                        {
+                            modelName = modelIdElement.GetString() ?? id;
+                        }
+                        else
+                        {
+                            // Use the last part of the ID as the name
+                            var parts = id.Split('/');
+                            modelName = parts.Length > 1 ? parts[1] : id;
+                        }
+
+                        // Get model details
+                        var modelInfo = new ModelInfo
+                        {
+                            Id = modelId,
+                            Name = modelName,
+                            Description = element.TryGetProperty("description", out var desc) ?
+                                          desc.GetString() ?? "ONNX model from HuggingFace" :
+                                          "ONNX model from HuggingFace",
+                            Provider = AIProvider.HuggingFace,
+                            // Construct download URL
+                            DownloadUrl = $"https://huggingface.co/{id}/resolve/main/model.onnx",
+                            Version = "latest",
+                            Size = "Unknown", // Size is often not available in the API
+                            CreatedAt = DateTime.UtcNow,
+                            LastModifiedAt = DateTime.UtcNow
+                        };
+
+                        // Extract tags for supported tasks
+                        if (element.TryGetProperty("tags", out var tagsElement))
+                        {
+                            var tasks = new List<string>();
+                            foreach (var tag in tagsElement.EnumerateArray())
+                            {
+                                string tagValue = tag.GetString() ?? "";
+                                if (!string.IsNullOrEmpty(tagValue))
+                                {
+                                    tasks.Add(tagValue);
+                                }
+                            }
+                            modelInfo.SupportedTasks = tasks.ToArray();
+                        }
+                        else
+                        {
+                            modelInfo.SupportedTasks = new[] { "unknown" };
+                        }
+
+                        // Add metadata about authentication requirement
+                        var metadata = new Dictionary<string, string>
+                        {
+                            ["RequiresAuth"] = isAuthenticated ? "false" : "true",
+                            ["Source"] = "HuggingFace"
+                        };
+                        modelInfo.Metadata = metadata;
+
+                        models.Add(modelInfo);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error parsing model entry from HuggingFace API");
+                        // Continue with next model
+                    }
+                }
+
+                _logger.LogInformation("Retrieved {Count} ONNX models from HuggingFace", models.Count);
+                return models;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching models from HuggingFace API");
+                return new List<ModelInfo>();
+            }
         }
     }
 }

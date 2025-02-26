@@ -50,7 +50,29 @@ namespace Nexi.Data.Models
         // Serialized form of Metadata
         [Column("Metadata")]
         [MaxLength(2000)]
-        public string MetadataJson { get; set; } = "{}";
+        public string MetadataJson
+        {
+            get => System.Text.Json.JsonSerializer.Serialize(Metadata);
+            set
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    Metadata = new Dictionary<string, string>();
+                }
+                else
+                {
+                    try
+                    {
+                        Metadata = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(value)
+                            ?? new Dictionary<string, string>();
+                    }
+                    catch
+                    {
+                        Metadata = new Dictionary<string, string>();
+                    }
+                }
+            }
+        }
 
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

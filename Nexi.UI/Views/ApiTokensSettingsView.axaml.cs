@@ -1,13 +1,18 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
-namespace Nexi.UI;
-
-public partial class ApiTokensSettingsView : UserControl
+namespace Nexi.UI.Views
 {
-    public ApiTokensSettingsView()
+    public partial class ApiTokensSettingsView : UserControl
     {
-        InitializeComponent();
+        public ApiTokensSettingsView()
+        {
+            InitializeComponent();
+        }
+
+        private void InitializeComponent()
+        {
+            AvaloniaXamlLoader.Load(this);
+        }
     }
 }

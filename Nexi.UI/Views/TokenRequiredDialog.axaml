@@ -2,12 +2,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="using:Nexi.UI.ViewModels"
+        xmlns:viewModels="using:Nexi.UI.ViewModels"
         xmlns:material="using:Material.Icons.Avalonia"
         mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="350"
         x:Class="Nexi.UI.Views.TokenRequiredDialog"
         x:CompileBindings="True"
-        x:DataType="vm:TokenRequiredViewModel"
+        x:DataType="viewModels:TokenRequiredViewModel"
         Title="Authentication Required"
         Width="500"
         Height="350"
@@ -24,7 +24,7 @@
       <TextBlock Text="Authentication Required"
                FontSize="24"
                FontWeight="SemiBold"/>
-      <TextBlock Text="{CompiledBinding ExplanationText}"
+      <TextBlock Text="{Binding ExplanationText}"
                TextWrapping="Wrap"/>
     </StackPanel>
 
@@ -34,27 +34,27 @@
       <Grid ColumnDefinitions="*,Auto">
         <TextBox Grid.Column="0"
                PasswordChar="•"
-               Text="{CompiledBinding Token}"
+               Text="{Binding Token}"
                Watermark="Enter your token here"/>
         <ToggleButton Grid.Column="1"
                     Margin="8,0,0,0"
-                    IsChecked="{CompiledBinding ShowToken}"
+                    IsChecked="{Binding ShowToken}"
                     ToolTip.Tip="Show/Hide Token">
-          <material:MaterialIcon Kind="{CompiledBinding ShowToken, Converter={StaticResource BoolToVisibilityIconConverter}}"/>
+          <material:MaterialIcon Kind="{Binding ShowToken, Converter={StaticResource BoolToVisibilityIconConverter}}"/>
         </ToggleButton>
       </Grid>
 
       <CheckBox Content="Save token for future downloads"
-              IsChecked="{CompiledBinding SaveToken}"
+              IsChecked="{Binding SaveToken}"
               Margin="0,8,0,0"/>
 
       <Button Content="Get a HuggingFace token"
-            Command="{CompiledBinding OpenHuggingFaceTokenPageCommand}"
+            Command="{Binding OpenHuggingFaceTokenPageCommand}"
             Classes="hyperlink-button"
             Margin="0,8,0,0"/>
 
-      <TextBlock Text="{CompiledBinding StatusMessage}"
-               Foreground="{CompiledBinding StatusIsError, Converter={StaticResource BoolToErrorBrushConverter}}"
+      <TextBlock Text="{Binding StatusMessage}"
+               Foreground="{Binding StatusIsError, Converter={StaticResource BoolToErrorBrushConverter}}"
                Margin="0,8,0,0"
                TextWrapping="Wrap"/>
     </StackPanel>
@@ -66,12 +66,12 @@
               Spacing="8"
               Margin="0,16,0,0">
       <Button Content="Cancel"
-            Command="{CompiledBinding CancelCommand}"
+            Command="{Binding CancelCommand}"
             Width="80"/>
       <Button Content="Continue"
-            Command="{CompiledBinding ContinueCommand}"
+            Command="{Binding ContinueCommand}"
             Classes="accent-button"
-            IsEnabled="{CompiledBinding CanContinue}"
+            IsEnabled="{Binding CanContinue}"
             Width="80"/>
     </StackPanel>
   </Grid>
