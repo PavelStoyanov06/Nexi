@@ -13,6 +13,7 @@
     <converters:ModelStatusToBrushConverter x:Key="ModelStatusToBrushConverter"/>
     <converters:BoolToVisibilityIconConverter x:Key="BoolToVisibilityIconConverter"/>
     <converters:BoolToErrorBrushConverter x:Key="BoolToErrorBrushConverter"/>
+    <converters:PasswordCharConverter x:Key="PasswordCharConverter"/>
   </Application.Resources>
 
   <Application.Styles>

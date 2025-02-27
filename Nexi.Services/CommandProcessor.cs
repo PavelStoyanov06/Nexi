@@ -72,10 +72,14 @@ namespace Nexi.Services
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    Process.Start(new ProcessStartInfo("cmd", "/c start https://www.google.com")
+                    var psi = new ProcessStartInfo
                     {
-                        CreateNoWindow = true
-                    });
+                        FileName = "cmd",
+                        Arguments = "/c start https://www.google.com",
+                        CreateNoWindow = true,
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 {

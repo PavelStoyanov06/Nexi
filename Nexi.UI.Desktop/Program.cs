@@ -106,6 +106,17 @@ namespace Nexi.UI.Desktop
             services.AddTransient<SettingsViewModel>();
             services.AddTransient<ApiTokensViewModel>();
 
+            // Create service provider
+            var serviceProvider = services.BuildServiceProvider();
+
+            // Ensure database is created
+            using (var scope = serviceProvider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<NexiDbContext>();
+                dbContext.Database.EnsureCreated();
+                Console.WriteLine("Database initialization completed");
+            }
+
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()

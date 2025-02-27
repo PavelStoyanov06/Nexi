@@ -155,8 +155,24 @@ namespace Nexi.UI.ViewModels
         public bool IsVoiceModeEnabled
         {
             get => _isVoiceModeEnabled;
-            set => this.RaiseAndSetIfChanged(ref _isVoiceModeEnabled, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isVoiceModeEnabled, value);
+                // Toggle voice recognition service based on the new value
+                _ = Task.Run(async () => {
+                    if (value)
+                    {
+                        await StartVoiceRecognitionAsync();
+                    }
+                    else
+                    {
+                        await StopVoiceRecognitionAsync();
+                    }
+                });
+            }
         }
+
+
 
         public bool IsProcessing
         {
@@ -205,6 +221,44 @@ namespace Nexi.UI.ViewModels
             {
                 _logger.LogError(ex, "Error loading chat history");
                 StatusMessage = $"Error loading chat: {ex.Message}";
+            }
+        }
+
+        private async Task StartVoiceRecognitionAsync()
+        {
+            try
+            {
+                StatusMessage = "Starting voice recognition...";
+                await _voiceService.StartListeningAsync();
+                StatusMessage = "Voice mode activated. Say something!";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting voice recognition");
+                StatusMessage = $"Error starting voice recognition: {ex.Message}";
+                // Reset the toggle button state without triggering the setter again
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _isVoiceModeEnabled = false;
+                    this.RaisePropertyChanged(nameof(IsVoiceModeEnabled));
+                });
+            }
+        }
+
+        private async Task StopVoiceRecognitionAsync()
+        {
+            try
+            {
+                if (_voiceService.IsListening)
+                {
+                    await _voiceService.StopListeningAsync();
+                    StatusMessage = "Voice mode deactivated";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error stopping voice recognition");
+                StatusMessage = $"Error stopping voice recognition: {ex.Message}";
             }
         }
 

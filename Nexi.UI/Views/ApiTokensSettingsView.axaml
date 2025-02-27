@@ -38,6 +38,9 @@
             Some AI models require authentication for download due to licensing restrictions,
             usage tracking, or resource management. Rather than embedding tokens in the application
             (which would compromise security), Nexi asks you to provide your own tokens.
+
+            Note: Only READ permissions are required when creating your HuggingFace API token,
+            as the application only reads model information and downloads models.
           </TextBlock>
           <Button Content="Learn how to create a HuggingFace token"
                 Command="{Binding OpenHuggingFaceTokenPageCommand}"
@@ -51,7 +54,7 @@
         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
           <TextBox Grid.Column="0"
                 Text="{Binding HuggingFaceToken}"
-                PasswordChar="•"
+                PasswordChar="{Binding ShowHuggingFaceToken, Converter={StaticResource PasswordCharConverter}}"
                 Watermark="Enter your HuggingFace token"
                 MaxWidth="500"/>
 
