@@ -106,6 +106,7 @@
                       CornerRadius="12"
                       BoxShadow="0 2 8 0 #30000000"
                       Width="360"
+                      Height="320"
                       Margin="0,0,16,16">
                 <Grid RowDefinitions="Auto,*,Auto">
                   <!-- Header with Category Badge -->
@@ -149,8 +150,12 @@
 
                       <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="{CompiledBinding Name}"
-                                   FontSize="18"
-                                   FontWeight="SemiBold"/>
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"
+                                   MaxHeight="44"
+                                   MaxWidth="250"
+                                   TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{CompiledBinding Size}"
                                    FontSize="14"
                                    Opacity="0.7"/>
@@ -161,12 +166,21 @@
                     <TextBlock Grid.Row="1"
                                Text="{CompiledBinding Description}"
                                TextWrapping="Wrap"
+                               MaxHeight="60"
+                               TextTrimming="CharacterEllipsis"
                                Margin="0,0,0,12"/>
 
-                    <!-- Supported Tasks -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
-                      <TextBlock Text="Capabilities: " FontWeight="SemiBold"/>
-                      <TextBlock Text="{CompiledBinding TasksDisplay}" TextWrapping="Wrap"/>
+                    <!-- Capabilities Section -->
+                    <StackPanel Grid.Row="2" Margin="0,0,0,12">
+                      <TextBlock Text="Capabilities:"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,4"/>
+                      <Border MaxWidth="310">
+                        <TextBlock Text="{CompiledBinding TasksDisplay}"
+                                 TextWrapping="Wrap"
+                                 MaxHeight="36"
+                                 TextTrimming="CharacterEllipsis"/>
+                      </Border>
                     </StackPanel>
 
                     <!-- Version Info -->

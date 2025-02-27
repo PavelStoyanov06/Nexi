@@ -62,8 +62,13 @@ namespace Nexi.Services.AI
                     _logger.LogInformation("Successfully fetched {Count} models from HuggingFace", huggingFaceModels.Count());
                     allModels = huggingFaceModels.ToList();
 
-                    // Add a few built-in models as fallback for offline usage
-                    var builtInModels = GetBuiltInOnnxModels();
+                    // Add a few built-in models as fallback for offline usage, but limit to just the important ones
+                    var builtInModels = GetBuiltInOnnxModels().Where(m =>
+                        m.Id.Contains("bert") ||
+                        m.Id.Contains("distil") ||
+                        m.Id.Contains("gpt") ||
+                        m.Id.EndsWith("-tiny") ||
+                        m.Id.Contains("mobile")).ToList();
 
                     // Add built-in models that don't clash with HuggingFace IDs
                     var existingIds = allModels.Select(m => m.Id).ToHashSet();
@@ -82,6 +87,12 @@ namespace Nexi.Services.AI
                     // Couldn't get models from HuggingFace, fall back to built-in
                     _logger.LogWarning("Failed to get models from HuggingFace, using built-in models instead");
                     allModels = GetBuiltInOnnxModels().ToList();
+
+                    // Mark all as built-in
+                    foreach (var model in allModels)
+                    {
+                        model.Metadata["Source"] = "BuiltIn";
+                    }
                 }
 
                 // Save models to database
@@ -98,7 +109,12 @@ namespace Nexi.Services.AI
                 _logger.LogError(ex, "Error getting available models");
 
                 // Fall back to built-in models in case of failure
-                return GetBuiltInOnnxModels();
+                var fallbackModels = GetBuiltInOnnxModels().ToList();
+                foreach (var model in fallbackModels)
+                {
+                    model.Metadata["Source"] = "BuiltIn";
+                }
+                return fallbackModels;
             }
         }
 
@@ -413,6 +429,191 @@ namespace Nexi.Services.AI
             };
         }
 
+        private async Task FetchModelsWithQuery(string apiUrl, string? token, List<ModelInfo> allModels)
+        {
+            try
+            {
+                bool isAuthenticated = !string.IsNullOrEmpty(token);
+                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+
+                // Add authentication if available
+                if (isAuthenticated)
+                {
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                }
+
+                // Add user agent
+                request.Headers.Add("User-Agent", "Nexi-App/1.0");
+
+                // Make the request
+                using var response = await _httpClient.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+
+                string jsonResponse = await response.Content.ReadAsStringAsync();
+
+                // Parse the JSON response
+                using var document = System.Text.Json.JsonDocument.Parse(jsonResponse);
+                var existingIds = allModels.Select(m => m.Id).ToHashSet();
+
+                foreach (var element in document.RootElement.EnumerateArray())
+                {
+                    try
+                    {
+                        // Basic properties
+                        string id = element.GetProperty("id").GetString() ?? "";
+                        string modelId = id.Replace("/", "-").ToLowerInvariant();
+
+                        // Skip if we already have this model
+                        if (existingIds.Contains(modelId))
+                        {
+                            continue;
+                        }
+
+                        // Get model name - try modelId property, then use the last part of the ID
+                        string modelName;
+                        if (element.TryGetProperty("modelId", out var modelIdElement) && !string.IsNullOrEmpty(modelIdElement.GetString()))
+                        {
+                            modelName = modelIdElement.GetString() ?? id;
+                        }
+                        else
+                        {
+                            // Use the last part of the ID as the name
+                            var parts = id.Split('/');
+                            modelName = parts.Length > 1 ? parts[1] : id;
+                        }
+
+                        // Format the name nicely - replace dashes with spaces and capitalize words
+                        modelName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                            modelName.Replace('-', ' '));
+
+                        // Get model description - sometimes it's in a pipeline_tag property
+                        string description;
+                        if (element.TryGetProperty("description", out var descElement) &&
+                            !string.IsNullOrEmpty(descElement.GetString()))
+                        {
+                            description = descElement.GetString() ?? "ONNX model from HuggingFace";
+
+                            // Truncate description if too long
+                            if (description.Length > 300)
+                            {
+                                description = description.Substring(0, 297) + "...";
+                            }
+                        }
+                        else if (element.TryGetProperty("pipeline_tag", out var pipelineTag) &&
+                                 !string.IsNullOrEmpty(pipelineTag.GetString()))
+                        {
+                            description = $"ONNX model for {pipelineTag.GetString()}";
+                        }
+                        else
+                        {
+                            description = "ONNX model from HuggingFace";
+                        }
+
+                        // Guess model size based on task
+                        string modelSize = "Unknown";
+                        if (id.Contains("small") || id.Contains("tiny") || id.Contains("mini"))
+                        {
+                            modelSize = "Small (~100MB)";
+                        }
+                        else if (id.Contains("base") || id.Contains("medium"))
+                        {
+                            modelSize = "Medium (~500MB)";
+                        }
+                        else if (id.Contains("large") || id.Contains("big"))
+                        {
+                            modelSize = "Large (~1GB+)";
+                        }
+
+                        // Get model info object
+                        var modelInfo = new ModelInfo
+                        {
+                            Id = modelId,
+                            Name = modelName,
+                            Description = description,
+                            Provider = AIProvider.HuggingFace,
+                            // Fix for models that might use a different filename convention
+                            DownloadUrl = $"https://huggingface.co/{id}/resolve/main/model.onnx",
+                            Version = "latest",
+                            Size = modelSize,
+                            CreatedAt = DateTime.UtcNow,
+                            LastModifiedAt = DateTime.UtcNow
+                        };
+
+                        // Extract tags for supported tasks
+                        if (element.TryGetProperty("tags", out var tagsElement))
+                        {
+                            var tasks = new List<string>();
+                            foreach (var tag in tagsElement.EnumerateArray())
+                            {
+                                string tagValue = tag.GetString() ?? "";
+                                if (!string.IsNullOrEmpty(tagValue))
+                                {
+                                    // Clean up and format task names nicely
+                                    tagValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                                        tagValue.Replace('-', ' '));
+                                    tasks.Add(tagValue);
+                                }
+                            }
+
+                            // If no tags were found, try pipeline_tag
+                            if (tasks.Count == 0 && element.TryGetProperty("pipeline_tag", out var pipeline))
+                            {
+                                string pipelineValue = pipeline.GetString() ?? "";
+                                if (!string.IsNullOrEmpty(pipelineValue))
+                                {
+                                    pipelineValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                                        pipelineValue.Replace('-', ' '));
+                                    tasks.Add(pipelineValue);
+                                }
+                            }
+
+                            // If still no tasks, use a default
+                            if (tasks.Count == 0)
+                            {
+                                tasks.Add("General");
+                            }
+
+                            modelInfo.SupportedTasks = tasks.ToArray();
+                        }
+                        else
+                        {
+                            modelInfo.SupportedTasks = new[] { "General" };
+                        }
+
+                        // Add metadata
+                        var metadata = new Dictionary<string, string>
+                        {
+                            ["RequiresAuth"] = isAuthenticated ? "false" : "true",
+                            ["Source"] = "HuggingFace"
+                        };
+
+                        // Store download stats if available
+                        if (element.TryGetProperty("downloads", out var downloads))
+                        {
+                            metadata["Downloads"] = downloads.GetInt32().ToString();
+                        }
+
+                        modelInfo.Metadata = metadata;
+
+                        // Add to collection
+                        allModels.Add(modelInfo);
+                        existingIds.Add(modelId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error parsing model entry from HuggingFace API");
+                        // Continue with next model
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching models with query: {Query}", apiUrl);
+                // Just log the error and continue - we'll return whatever models we managed to get
+            }
+        }
+
+
         // This method is deliberately disabled to avoid unauthorized access errors
         private async Task<IEnumerable<ModelInfo>> FetchOnnxModelsFromHuggingFaceAsync()
         {
@@ -438,103 +639,13 @@ namespace Nexi.Services.AI
                     }
                 }
 
-                // Base API URL for HuggingFace - requesting a larger number of models
-                string apiUrl = "https://huggingface.co/api/models?limit=200&filter=onnx";
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-
-                // Add authentication if available
-                if (isAuthenticated)
-                {
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-                }
-
-                // Add user agent
-                request.Headers.Add("User-Agent", "Nexi-App/1.0");
-
-                // Make the request
-                using var response = await _httpClient.SendAsync(request);
-                response.EnsureSuccessStatusCode();
-
-                string jsonResponse = await response.Content.ReadAsStringAsync();
-
-                // Parse the JSON response
-                using var document = System.Text.Json.JsonDocument.Parse(jsonResponse);
                 var models = new List<ModelInfo>();
 
-                foreach (var element in document.RootElement.EnumerateArray())
-                {
-                    try
-                    {
-                        // Basic properties
-                        string id = element.GetProperty("id").GetString() ?? "";
-                        string modelId = id.Replace("/", "-").ToLowerInvariant();
+                // Get popular models first
+                await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=downloads&filter=onnx", token, models);
 
-                        // Check if we can find a name
-                        string modelName;
-                        if (element.TryGetProperty("modelId", out var modelIdElement))
-                        {
-                            modelName = modelIdElement.GetString() ?? id;
-                        }
-                        else
-                        {
-                            // Use the last part of the ID as the name
-                            var parts = id.Split('/');
-                            modelName = parts.Length > 1 ? parts[1] : id;
-                        }
-
-                        // Get model details
-                        var modelInfo = new ModelInfo
-                        {
-                            Id = modelId,
-                            Name = modelName,
-                            Description = element.TryGetProperty("description", out var desc) ?
-                                          desc.GetString() ?? "ONNX model from HuggingFace" :
-                                          "ONNX model from HuggingFace",
-                            Provider = AIProvider.HuggingFace,
-                            // Construct download URL
-                            DownloadUrl = $"https://huggingface.co/{id}/resolve/main/model.onnx",
-                            Version = "latest",
-                            Size = "Unknown", // Size is often not available in the API
-                            CreatedAt = DateTime.UtcNow,
-                            LastModifiedAt = DateTime.UtcNow
-                        };
-
-                        // Extract tags for supported tasks
-                        if (element.TryGetProperty("tags", out var tagsElement))
-                        {
-                            var tasks = new List<string>();
-                            foreach (var tag in tagsElement.EnumerateArray())
-                            {
-                                string tagValue = tag.GetString() ?? "";
-                                if (!string.IsNullOrEmpty(tagValue))
-                                {
-                                    tasks.Add(tagValue);
-                                }
-                            }
-                            modelInfo.SupportedTasks = tasks.ToArray();
-                        }
-                        else
-                        {
-                            modelInfo.SupportedTasks = new[] { "unknown" };
-                        }
-
-                        // Add metadata about authentication requirement
-                        var metadata = new Dictionary<string, string>
-                        {
-                            ["RequiresAuth"] = isAuthenticated ? "false" : "true",
-                            ["Source"] = "HuggingFace"
-                        };
-                        modelInfo.Metadata = metadata;
-
-                        models.Add(modelInfo);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error parsing model entry from HuggingFace API");
-                        // Continue with next model
-                    }
-                }
+                // Then get recent models
+                await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=lastModified&filter=onnx", token, models);
 
                 _logger.LogInformation("Retrieved {Count} ONNX models from HuggingFace", models.Count);
                 return models;

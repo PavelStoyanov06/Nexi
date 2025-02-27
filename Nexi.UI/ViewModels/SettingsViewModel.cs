@@ -247,17 +247,18 @@ namespace Nexi.UI.ViewModels
                 // Load voice devices
                 await LoadVoiceDevicesAsync();
 
-                // Load AI models
+                // Load AI models - ONLY DOWNLOADED MODELS for selection
                 var models = await _aiModelService.GetAllModelsAsync();
+                var downloadedModels = models.Where(m => m.Status == ModelStatus.Downloaded).ToList();
 
                 AvailableModels.Clear();
-                foreach (var model in models)
+                foreach (var model in downloadedModels)
                 {
                     AvailableModels.Add(model);
                 }
 
                 // Set selected model
-                if (!string.IsNullOrEmpty(_selectedModelId))
+                if (!string.IsNullOrEmpty(_selectedModelId) && downloadedModels.Any())
                 {
                     for (int i = 0; i < AvailableModels.Count; i++)
                     {
@@ -268,14 +269,28 @@ namespace Nexi.UI.ViewModels
                         }
                     }
                 }
+                else if (AvailableModels.Count > 0)
+                {
+                    // If no model was selected or the selected model isn't available, select the first downloaded model
+                    SelectedModelIndex = 0;
+                    _selectedModelId = AvailableModels[0].Id;
+                    await _userSettingsService.UpdateSelectedModelAsync(_selectedModelId);
+                }
+                else
+                {
+                    // No models available
+                    SelectedModelIndex = -1;
+                    //StatusMessage = "No models installed. Please visit the Models page to download models.";
+                }
 
                 // Add diagnostic information
                 var allSessions = await _chatStorageService.GetAllSessionsAsync();
-
+    
                 DiagnosticInfo = $"Database Status:\n" +
                     $"• Settings Record: Found\n" +
                     $"• Chat Sessions: {allSessions.Count()} stored\n" +
                     $"• AI Models: {models.Count()} configured\n" +
+                    $"• Installed Models: {downloadedModels.Count()} ready to use\n" +
                     $"• Current Theme: {_selectedTheme}\n" +
                     $"• Selected Device: {_selectedInputDevice ?? "None"}\n" +
                     $"• Sensitivity: {_inputSensitivity}";
@@ -293,7 +308,7 @@ namespace Nexi.UI.ViewModels
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading settings");
-                DiagnosticInfo = $"Error: {ex.Message}";
+                DiagnosticInfo = $"Error loading settings: {ex.Message}";
                 this.RaisePropertyChanged(nameof(DiagnosticInfo));
             }
             finally
