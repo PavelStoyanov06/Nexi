@@ -1,6 +1,5 @@
 ﻿using Avalonia.Threading;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Nexi.Data.Models;
@@ -9,11 +8,8 @@ using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Reactive.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -27,14 +23,13 @@ namespace Nexi.UI.ViewModels
         private readonly IAIService _aiService;
         private readonly ILogger<ModelsViewModel> _logger;
         private readonly IDbContextFactory<NexiDbContext> _contextFactory;
-        private ObservableCollection<ModelItemViewModel> _availableModels;
+        private ObservableCollection<ModelItemViewModel> _availableModels = new ObservableCollection<ModelItemViewModel>();
+        private ObservableCollection<ModelItemViewModel> _filteredModels = new ObservableCollection<ModelItemViewModel>();
         private bool _isLoading;
         private string _statusMessage = string.Empty;
         private bool _showOnlyDownloaded = false;
         private string _searchQuery = string.Empty;
         private string _selectedCategory = "All";
-        private readonly ObservableAsPropertyHelper<ObservableCollection<ModelItemViewModel>> _filteredModels;
-        public ICommand ToggleAuthRequirementCommand { get; }
         private bool _isLoadingMoreModels = false;
         private bool _hasMoreModels = true;
         private int _currentPage = 0;
@@ -46,15 +41,13 @@ namespace Nexi.UI.ViewModels
             IModelRepository modelRepository,
             IAIService aiService,
             ILogger<ModelsViewModel> logger,
-            IDbContextFactory<NexiDbContext> contextFactory) // Add this parameter
+            IDbContextFactory<NexiDbContext> contextFactory)
         {
             _aiModelService = aiModelService;
             _modelRepository = modelRepository;
             _aiService = aiService;
             _logger = logger;
-            _contextFactory = contextFactory; // Add this field
-            _availableModels = new ObservableCollection<ModelItemViewModel>();
-
+            _contextFactory = contextFactory;
 
             // Initialize commands
             RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
@@ -82,46 +75,64 @@ namespace Nexi.UI.ViewModels
                 });
             };
 
-            // Setup filtered models based on search, category and show options
-            _filteredModels = this.WhenAnyValue(
+            // Setup subscription to property changes for filtering
+            this.WhenAnyValue(
                 x => x.SearchQuery,
                 x => x.SelectedCategory,
                 x => x.ShowOnlyDownloaded,
-                x => x.AvailableModels,
-                (search, category, showOnlyDownloaded, models) =>
-                {
-                    if (models == null) return new ObservableCollection<ModelItemViewModel>();
+                x => x.AvailableModels)
+                .Throttle(TimeSpan.FromMilliseconds(200))
+                .Subscribe(_ => ApplyFilters());
 
+            // Load models on startup
+            _ = RefreshModelsAsync();
+        }
+
+        private void ApplyFilters()
+        {
+            try
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
                     // Start with all models
-                    var filtered = models.AsEnumerable();
+                    var filtered = AvailableModels.AsEnumerable();
 
                     // Apply search filter if present
-                    if (!string.IsNullOrWhiteSpace(search))
+                    if (!string.IsNullOrWhiteSpace(SearchQuery))
                     {
-                        var searchLower = search.Trim().ToLowerInvariant();
+                        var searchLower = SearchQuery.Trim().ToLowerInvariant();
                         filtered = filtered.Where(m =>
                             m.Name.ToLowerInvariant().Contains(searchLower) ||
                             m.Description.ToLowerInvariant().Contains(searchLower));
                     }
 
                     // Apply category filter if not "All"
-                    if (category != "All")
+                    if (SelectedCategory != "All")
                     {
-                        filtered = filtered.Where(m => GetModelCategory(m) == category);
+                        filtered = filtered.Where(m => GetModelCategory(m) == SelectedCategory);
                     }
 
                     // Apply downloaded filter if enabled
-                    if (showOnlyDownloaded)
+                    if (ShowOnlyDownloaded)
                     {
                         filtered = filtered.Where(m => m.Status == ModelStatus.Downloaded);
                     }
 
-                    return new ObservableCollection<ModelItemViewModel>(filtered);
-                })
-                .ToProperty(this, x => x.FilteredModels);
+                    // Update filtered models collection
+                    FilteredModels.Clear();
+                    foreach (var model in filtered)
+                    {
+                        FilteredModels.Add(model);
+                    }
 
-            // Load models on startup
-            _ = RefreshModelsAsync();
+                    _logger.LogInformation("Applied filters, showing {Count} of {Total} models",
+                        FilteredModels.Count, AvailableModels.Count);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying filters");
+            }
         }
 
         public bool IsLoadingMoreModels
@@ -136,8 +147,120 @@ namespace Nexi.UI.ViewModels
             private set => this.RaiseAndSetIfChanged(ref _hasMoreModels, value);
         }
 
-        // Add this command
         public ICommand LoadMoreModelsCommand { get; }
+        public ICommand ToggleAuthRequirementCommand { get; }
+
+        public ObservableCollection<ModelItemViewModel> AvailableModels
+        {
+            get => _availableModels;
+            private set => this.RaiseAndSetIfChanged(ref _availableModels, value);
+        }
+
+        public ObservableCollection<ModelItemViewModel> FilteredModels
+        {
+            get => _filteredModels;
+            private set => this.RaiseAndSetIfChanged(ref _filteredModels, value);
+        }
+
+        public bool IsLoading
+        {
+            get => _isLoading;
+            private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
+        }
+
+        public string StatusMessage
+        {
+            get => _statusMessage;
+            private set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
+        }
+
+        public bool ShowOnlyDownloaded
+        {
+            get => _showOnlyDownloaded;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _showOnlyDownloaded, value);
+                // ApplyFilters will be called via WhenAnyValue subscription
+            }
+        }
+
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _searchQuery, value);
+                // ApplyFilters will be called via WhenAnyValue subscription
+            }
+        }
+
+        public string SelectedCategory
+        {
+            get => _selectedCategory;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedCategory, value);
+                // ApplyFilters will be called via WhenAnyValue subscription
+            }
+        }
+
+        public IEnumerable<string> Categories => new List<string>
+        {
+            "All",
+            "Small",
+            "Medium",
+            "Large",
+            "Specialized",
+            "Multilingual"
+        };
+
+        public ICommand RefreshModelsCommand { get; }
+        public ICommand DownloadModelCommand { get; }
+        public ICommand DeleteModelCommand { get; }
+        public ICommand ToggleShowDownloadedCommand { get; }
+        public ICommand ClearSearchCommand { get; }
+
+        private async Task RefreshModelsAsync()
+        {
+            try
+            {
+                IsLoading = true;
+                StatusMessage = "Loading models...";
+
+                // Cancel any pending loading operations
+                _loadingCts.Cancel();
+                _loadingCts = new CancellationTokenSource();
+
+                // Reset the state
+                _currentPage = 0;
+                HasMoreModels = true;
+
+                // Clear collections on UI thread
+                await Dispatcher.UIThread.InvokeAsync(() => {
+                    AvailableModels.Clear();
+                    FilteredModels.Clear();
+                });
+
+                // Load the initial page
+                await LoadMoreModelsAsync();
+
+                // Apply initial filtering
+                ApplyFilters();
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Model loading was cancelled");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing models: {Message}", ex.Message);
+                StatusMessage = $"Error loading models: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
 
         private async Task ToggleAuthRequirementAsync(string modelId)
         {
@@ -178,111 +301,6 @@ namespace Nexi.UI.ViewModels
             }
         }
 
-
-        public ObservableCollection<ModelItemViewModel> AvailableModels
-        {
-            get => _availableModels;
-            private set => this.RaiseAndSetIfChanged(ref _availableModels, value);
-        }
-
-        public ObservableCollection<ModelItemViewModel> FilteredModels => _filteredModels.Value;
-
-        public bool IsLoading
-        {
-            get => _isLoading;
-            private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
-        }
-
-        public string StatusMessage
-        {
-            get => _statusMessage;
-            private set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
-        }
-
-        public bool ShowOnlyDownloaded
-        {
-            get => _showOnlyDownloaded;
-            set => this.RaiseAndSetIfChanged(ref _showOnlyDownloaded, value);
-        }
-
-        public string SearchQuery
-        {
-            get => _searchQuery;
-            set => this.RaiseAndSetIfChanged(ref _searchQuery, value);
-        }
-
-        public string SelectedCategory
-        {
-            get => _selectedCategory;
-            set => this.RaiseAndSetIfChanged(ref _selectedCategory, value);
-        }
-
-        public IEnumerable<string> Categories => new List<string>
-        {
-            "All",
-            "Small",
-            "Medium",
-            "Large",
-            "Specialized",
-            "Multilingual"
-        };
-
-        public ICommand RefreshModelsCommand { get; }
-        public ICommand DownloadModelCommand { get; }
-        public ICommand DeleteModelCommand { get; }
-        public ICommand ToggleShowDownloadedCommand { get; }
-        public ICommand ClearSearchCommand { get; }
-
-        private async Task RefreshModelsAsync()
-        {
-            try
-            {
-                IsLoading = true;
-                StatusMessage = "Loading models...";
-
-                // Cancel any pending loading operations
-                _loadingCts.Cancel();
-                _loadingCts = new CancellationTokenSource();
-
-                // Reset the state
-                _currentPage = 0;
-                HasMoreModels = true;
-                AvailableModels.Clear();
-
-                // Load the initial page
-                await LoadMoreModelsAsync();
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogInformation("Model loading was cancelled");
-            }
-            catch (HttpRequestException ex)
-            {
-                _logger.LogError(ex, "Network error refreshing models: {Message}", ex.Message);
-                StatusMessage = $"Error loading models: {ex.Message}";
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "JSON error parsing models: {Message}", ex.Message);
-                StatusMessage = $"Error parsing model data: {ex.Message}";
-            }
-            catch (DbUpdateException ex)
-            {
-                _logger.LogError(ex, "Database error saving models: {Message}", ex.Message);
-                StatusMessage = $"Error saving models to database: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-
-        // Add these helper methods to your ModelsViewModel.cs class
-
-        /// <summary>
-        /// Ensures the model exists in the database before attempting operations on it
-        /// </summary>
         private async Task EnsureModelExistsInDatabaseAsync(ModelItemViewModel model)
         {
             try
@@ -330,10 +348,6 @@ namespace Nexi.UI.ViewModels
             }
         }
 
-
-        /// <summary>
-        /// Attempts to update model status, handling the case where the model doesn't exist
-        /// </summary>
         private async Task TryUpdateModelStatusAsync(string modelId, ModelStatus status)
         {
             try
@@ -345,21 +359,13 @@ namespace Nexi.UI.ViewModels
                 _logger.LogWarning("Could not update status for model {ModelId} - not found in database", modelId);
                 // Don't rethrow since this is being called from an exception handler
             }
-            catch (DbUpdateException ex)
+            catch (Exception ex)
             {
-                _logger.LogError(ex, "Database error updating status for model {ModelId}", modelId);
-                // Don't rethrow since this is being called from an exception handler
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogError(ex, "Invalid operation updating status for model {ModelId}", modelId);
+                _logger.LogError(ex, "Error updating status for model {ModelId}", modelId);
                 // Don't rethrow since this is being called from an exception handler
             }
         }
 
-        /// <summary>
-        /// Determines the AI Provider based on the download URL
-        /// </summary>
         private AIProvider GetProviderFromUrl(string url)
         {
             if (string.IsNullOrEmpty(url))
@@ -437,6 +443,8 @@ namespace Nexi.UI.ViewModels
                     {
                         AvailableModels.Add(model);
                     }
+                    // Re-apply filters with the new models
+                    ApplyFilters();
                 });
 
                 StatusMessage = $"Loaded {AvailableModels.Count} models" +
@@ -517,6 +525,9 @@ namespace Nexi.UI.ViewModels
                 model.IsDownloading = false;
                 model.StatusText = "Installed";
                 StatusMessage = $"Model {model.Name} downloaded successfully.";
+
+                // Re-apply filters in case download status is a filter criterion
+                ApplyFilters();
             }
             catch (KeyNotFoundException ex)
             {
@@ -528,57 +539,17 @@ namespace Nexi.UI.ViewModels
                 model.IsDownloading = false;
                 model.StatusText = "Error";
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex)
             {
-                _logger.LogError(ex, "Network error downloading model {ModelId}: {Message}", modelId, ex.Message);
-                StatusMessage = $"Download failed: Network error - {ex.Message}";
+                _logger.LogError(ex, "Error downloading model {ModelId}: {Message}", modelId, ex.Message);
+                StatusMessage = $"Download failed: {ex.Message}";
 
                 await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
 
                 // Reset UI state
                 model.Status = ModelStatus.Error;
                 model.IsDownloading = false;
-                model.StatusText = "Download failed";
-            }
-            catch (FileNotFoundException ex)
-            {
-                _logger.LogError(ex, "Model file not found for {ModelId}: {Message}", modelId, ex.Message);
-                StatusMessage = $"Download failed: Model file not found on server";
-
-                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
-                model.Status = ModelStatus.Error;
-                model.IsDownloading = false;
-                model.StatusText = "File not found";
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "IO error downloading model {ModelId}: {Message}", modelId, ex.Message);
-                StatusMessage = $"Download failed: IO error - {ex.Message}";
-
-                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
-                model.Status = ModelStatus.Error;
-                model.IsDownloading = false;
-                model.StatusText = "IO error";
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "Authentication error downloading model {ModelId}: {Message}", modelId, ex.Message);
-                StatusMessage = $"Download failed: {ex.Message}";
-
-                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
-                model.Status = ModelStatus.Error;
-                model.IsDownloading = false;
-                model.StatusText = "Authentication failed";
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogError(ex, "Invalid operation for model {ModelId}: {Message}", modelId, ex.Message);
-                StatusMessage = $"Download failed: {ex.Message}";
-
-                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
-                model.Status = ModelStatus.Error;
-                model.IsDownloading = false;
-                model.StatusText = "Operation error";
+                model.StatusText = "Error";
             }
             finally
             {
@@ -613,6 +584,9 @@ namespace Nexi.UI.ViewModels
                     model.StatusText = "Available";
                     model.DownloadProgress = 0;
                     StatusMessage = $"Model {model.Name} deleted successfully.";
+
+                    // Re-apply filters in case download status is a filter criterion
+                    ApplyFilters();
                 }
                 else
                 {

@@ -65,7 +65,7 @@
             </TextBox.InnerLeftContent>
             <TextBox.InnerRightContent>
               <Button Command="{CompiledBinding ClearSearchCommand}"
-                      IsVisible="{CompiledBinding !!SearchQuery}"
+                      IsVisible="{CompiledBinding SearchQuery, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                       Width="30"
                       Height="30"
                       Background="Transparent"
@@ -136,7 +136,7 @@
                     </Grid>
 
                     <!-- Main Content -->
-                    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="24,16">
+                    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="24,16">
                       <!-- Icon and Name -->
                       <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
                         <Border Grid.Column="0"
