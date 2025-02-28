@@ -1,12 +1,17 @@
 ﻿using Avalonia.Threading;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.Logging;
+using Nexi.Data.Context;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -19,6 +24,7 @@ namespace Nexi.UI.ViewModels
         private readonly IModelRepository _modelRepository;
         private readonly IAIService _aiService;
         private readonly ILogger<ModelsViewModel> _logger;
+        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private ObservableCollection<ModelItemViewModel> _availableModels;
         private bool _isLoading;
         private string _statusMessage = string.Empty;
@@ -26,18 +32,22 @@ namespace Nexi.UI.ViewModels
         private string _searchQuery = string.Empty;
         private string _selectedCategory = "All";
         private readonly ObservableAsPropertyHelper<ObservableCollection<ModelItemViewModel>> _filteredModels;
+        public ICommand ToggleAuthRequirementCommand { get; }
 
         public ModelsViewModel(
             IAIModelService aiModelService,
             IModelRepository modelRepository,
             IAIService aiService,
-            ILogger<ModelsViewModel> logger)
+            ILogger<ModelsViewModel> logger,
+            IDbContextFactory<NexiDbContext> contextFactory) // Add this parameter
         {
             _aiModelService = aiModelService;
             _modelRepository = modelRepository;
             _aiService = aiService;
             _logger = logger;
+            _contextFactory = contextFactory; // Add this field
             _availableModels = new ObservableCollection<ModelItemViewModel>();
+
 
             // Initialize commands
             RefreshModelsCommand = ReactiveCommand.CreateFromTask(RefreshModelsAsync);
@@ -45,6 +55,7 @@ namespace Nexi.UI.ViewModels
             DeleteModelCommand = ReactiveCommand.CreateFromTask<string>(DeleteModelAsync);
             ToggleShowDownloadedCommand = ReactiveCommand.Create(() => ShowOnlyDownloaded = !ShowOnlyDownloaded);
             ClearSearchCommand = ReactiveCommand.Create(() => SearchQuery = string.Empty);
+            ToggleAuthRequirementCommand = ReactiveCommand.CreateFromTask<string>(ToggleAuthRequirementAsync);
 
             // Subscribe to AI service events
             _aiService.OnInferenceProgress += (sender, message) =>
@@ -104,6 +115,46 @@ namespace Nexi.UI.ViewModels
             // Load models on startup
             _ = RefreshModelsAsync();
         }
+
+        private async Task ToggleAuthRequirementAsync(string modelId)
+        {
+            try
+            {
+                // Find the model in our collection
+                var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
+                if (model == null) return;
+
+                // Get the model from the database
+                using var context = await _contextFactory.CreateDbContextAsync();
+                var dbModel = await context.AIModels.FindAsync(modelId);
+
+                if (dbModel == null)
+                {
+                    StatusMessage = $"Model {modelId} not found in database";
+                    return;
+                }
+
+                // Check current auth requirement
+                bool currentRequiresAuth = dbModel.Metadata.TryGetValue("RequiresAuth", out var authValue) &&
+                                          authValue.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                // Toggle the value
+                dbModel.Metadata["RequiresAuth"] = (!currentRequiresAuth).ToString().ToLower();
+                dbModel.LastModifiedAt = DateTime.UtcNow;
+
+                // Save changes
+                await context.SaveChangesAsync();
+
+                // Update UI
+                StatusMessage = $"Model {model.Name} authentication requirement set to: {!currentRequiresAuth}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling authentication requirement");
+                StatusMessage = $"Error: {ex.Message}";
+            }
+        }
+
 
         public ObservableCollection<ModelItemViewModel> AvailableModels
         {
@@ -214,23 +265,139 @@ namespace Nexi.UI.ViewModels
             }
         }
 
+        // Add these helper methods to your ModelsViewModel.cs class
 
-
-        private async Task DownloadModelAsync(string modelId)
+        /// <summary>
+        /// Ensures the model exists in the database before attempting operations on it
+        /// </summary>
+        private async Task EnsureModelExistsInDatabaseAsync(ModelItemViewModel model)
         {
             try
             {
-                // Find the model in our collection
-                var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
-                if (model == null) return;
+                _logger.LogInformation("Creating model {ModelId} in database", model.Id);
 
+                // Determine if model requires authentication
+                bool requiresAuth = model.DownloadUrl.Contains("huggingface.co") ||
+                                    model.Category.Contains("HuggingFace");
+
+                // Create a new AIModelData entity from the view model
+                var newModel = new AIModelData
+                {
+                    Id = model.Id,
+                    Name = model.Name,
+                    Description = model.Description,
+                    Size = model.Size,
+                    Version = model.Version ?? "1.0",
+                    Status = ModelStatus.NotDownloaded,
+                    DownloadUrl = model.DownloadUrl,
+                    Provider = GetProviderFromUrl(model.DownloadUrl),
+                    SupportedTasks = model.SupportedTasks ?? Array.Empty<string>(),
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow,
+                    // Initialize metadata with authentication requirement
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["RequiresAuth"] = requiresAuth.ToString().ToLower(),
+                        ["Source"] = requiresAuth ? "HuggingFace" : "Local"
+                    }
+                };
+
+                // Get a DbContext to insert the model
+                using var context = await _contextFactory.CreateDbContextAsync();
+                await context.AIModels.AddAsync(newModel);
+                await context.SaveChangesAsync();
+
+                _logger.LogInformation("Successfully created model {ModelId} in database (RequiresAuth: {RequiresAuth})",
+                    model.Id, requiresAuth);
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Error saving model {ModelId} to database", model.Id);
+                throw new InvalidOperationException($"Could not save model {model.Name} to database: {ex.Message}", ex);
+            }
+        }
+
+
+        /// <summary>
+        /// Attempts to update model status, handling the case where the model doesn't exist
+        /// </summary>
+        private async Task TryUpdateModelStatusAsync(string modelId, ModelStatus status)
+        {
+            try
+            {
+                await _aiModelService.UpdateModelStatusAsync(modelId, status);
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning("Could not update status for model {ModelId} - not found in database", modelId);
+                // Don't rethrow since this is being called from an exception handler
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Database error updating status for model {ModelId}", modelId);
+                // Don't rethrow since this is being called from an exception handler
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Invalid operation updating status for model {ModelId}", modelId);
+                // Don't rethrow since this is being called from an exception handler
+            }
+        }
+
+        /// <summary>
+        /// Determines the AI Provider based on the download URL
+        /// </summary>
+        private AIProvider GetProviderFromUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+                return AIProvider.Local;
+
+            if (url.Contains("huggingface.co"))
+                return AIProvider.HuggingFace;
+
+            if (url.Contains("openai.com"))
+                return AIProvider.OpenAI;
+
+            if (url.Contains("azure.com"))
+                return AIProvider.AzureOpenAI;
+
+            return AIProvider.Local;
+        }
+
+        private async Task DownloadModelAsync(string modelId)
+        {
+            // Find the model in our collection
+            var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
+            if (model == null)
+            {
+                StatusMessage = $"Model with ID {modelId} not found in available models";
+                return;
+            }
+
+            try
+            {
                 IsLoading = true;
                 model.IsDownloading = true;
                 model.Status = ModelStatus.Downloading;
                 model.StatusText = "Downloading";
                 StatusMessage = $"Starting download of {model.Name}...";
 
-                // Update DB status
+                // Get the database model, create it if it doesn't exist
+                var dbModel = await _aiModelService.GetModelAsync(modelId);
+                if (dbModel == null)
+                {
+                    // Model doesn't exist in database - we need to add it first
+                    await EnsureModelExistsInDatabaseAsync(model);
+
+                    // Fetch the model again to ensure it was created
+                    dbModel = await _aiModelService.GetModelAsync(modelId);
+                    if (dbModel == null)
+                    {
+                        throw new InvalidOperationException($"Failed to create model {modelId} in database");
+                    }
+                }
+
+                // Update model status to Downloading
                 await _aiModelService.UpdateModelStatusAsync(modelId, ModelStatus.Downloading);
 
                 // Create progress reporter
@@ -251,26 +418,68 @@ namespace Nexi.UI.ViewModels
                 model.IsDownloading = false;
                 model.StatusText = "Installed";
                 StatusMessage = $"Model {model.Name} downloaded successfully.";
-
-                // Update DB status
-                await _aiModelService.UpdateModelStatusAsync(modelId, ModelStatus.Downloaded);
             }
-            catch (Exception ex)
+            catch (KeyNotFoundException ex)
             {
-                _logger.LogError(ex, "Error downloading model {ModelId}", modelId);
+                _logger.LogError(ex, "Model {ModelId} not found in database", modelId);
+                StatusMessage = "Error: Model not found in database. Try refreshing the model list.";
+
+                // Reset UI state
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "Error";
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "Network error downloading model {ModelId}: {Message}", modelId, ex.Message);
+                StatusMessage = $"Download failed: Network error - {ex.Message}";
+
+                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
+
+                // Reset UI state
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "Download failed";
+            }
+            catch (FileNotFoundException ex)
+            {
+                _logger.LogError(ex, "Model file not found for {ModelId}: {Message}", modelId, ex.Message);
+                StatusMessage = $"Download failed: Model file not found on server";
+
+                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "File not found";
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "IO error downloading model {ModelId}: {Message}", modelId, ex.Message);
+                StatusMessage = $"Download failed: IO error - {ex.Message}";
+
+                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "IO error";
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "Authentication error downloading model {ModelId}: {Message}", modelId, ex.Message);
                 StatusMessage = $"Download failed: {ex.Message}";
 
-                // Update DB status
-                await _aiModelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
+                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "Authentication failed";
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogError(ex, "Invalid operation for model {ModelId}: {Message}", modelId, ex.Message);
+                StatusMessage = $"Download failed: {ex.Message}";
 
-                // Find the model view model and update its status
-                var model = AvailableModels.FirstOrDefault(m => m.Id == modelId);
-                if (model != null)
-                {
-                    model.Status = ModelStatus.Error;
-                    model.IsDownloading = false;
-                    model.StatusText = "Download failed";
-                }
+                await TryUpdateModelStatusAsync(modelId, ModelStatus.Error);
+                model.Status = ModelStatus.Error;
+                model.IsDownloading = false;
+                model.StatusText = "Operation error";
             }
             finally
             {

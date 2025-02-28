@@ -9,6 +9,7 @@ using SharpCompress.Common;
 using Microsoft.ML.OnnxRuntime;
 using Interfaces;
 using Microsoft.Extensions.DependencyInjection;
+using Avalonia.Threading;
 
 namespace Nexi.Services.AI
 {
@@ -213,6 +214,156 @@ namespace Nexi.Services.AI
             }
         }
 
+        private async Task<string> ResolveModelUrlAsync(AIModelData model, IProgress<double>? progress = null)
+        {
+            // If model is not from HuggingFace or doesn't have metadata, return the original URL
+            if (model.Provider != AIProvider.HuggingFace || model.Metadata.Count == 0)
+            {
+                return model.DownloadUrl;
+            }
+
+            // Get original ID from metadata
+            if (!model.Metadata.TryGetValue("OriginalId", out var originalId))
+            {
+                // Try to extract it from the URL if it's a huggingface URL
+                if (model.DownloadUrl.Contains("huggingface.co"))
+                {
+                    var urlParts = model.DownloadUrl.Split(new[] { "huggingface.co/" }, StringSplitOptions.None);
+                    if (urlParts.Length > 1)
+                    {
+                        var remainingPath = urlParts[1];
+                        var pathParts = remainingPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (pathParts.Length >= 2)
+                        {
+                            originalId = $"{pathParts[0]}/{pathParts[1]}";
+                        }
+                        else if (pathParts.Length == 1)
+                        {
+                            originalId = pathParts[0];
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(originalId))
+                {
+                    _logger.LogWarning("Could not determine OriginalId for model {ModelId}", model.Id);
+                    return model.DownloadUrl;
+                }
+            }
+
+            // Base URL for HuggingFace API
+            string baseUrl = $"https://huggingface.co/{originalId}";
+            string apiBaseUrl = $"https://huggingface.co/api/models/{originalId}";
+
+            List<string> potentialPaths = new List<string>();
+
+            // Get potential paths from metadata
+            for (int i = 0; i < 10; i++) // Check up to 10 potential paths
+            {
+                if (model.Metadata.TryGetValue($"PotentialPath{i}", out var path))
+                {
+                    potentialPaths.Add(path);
+                }
+            }
+
+            // If no potential paths found, add some defaults
+            if (potentialPaths.Count == 0)
+            {
+                potentialPaths.AddRange(new[] {
+            "/resolve/main/onnx/model.onnx",
+            "/resolve/main/model.onnx",
+            "/resolve/main/onnx/model.safetensors",
+            "/blob/main/onnx/model.onnx",
+            "/raw/main/onnx/model.onnx",
+            "/raw/main/model.onnx",
+            "/tree/main/onnx"
+        });
+            }
+
+            // Log that we're trying multiple paths
+            RaiseInferenceProgress($"Trying to resolve the correct URL for model {model.Name}...");
+
+            // Try each path
+            using var httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10); // Short timeout for URL checks
+
+            // Add authentication if available
+            try
+            {
+                var authService = _serviceProvider.GetRequiredService<IAuthenticationService>();
+                var token = await authService.GetTokenAsync("HuggingFace");
+                if (!string.IsNullOrEmpty(token))
+                {
+                    httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get HuggingFace token for URL resolution");
+            }
+
+            // Add user agent
+            httpClient.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("Nexi", "1.0"));
+
+            // Try each path with the API URL first, then the regular URL
+            foreach (var path in potentialPaths)
+            {
+                // Try with API URL
+                string apiUrl = $"{apiBaseUrl}{path}";
+                RaiseInferenceProgress($"Trying API URL: {apiUrl}");
+
+                try
+                {
+                    // Make a HEAD request to check if the URL exists
+                    var request = new HttpRequestMessage(HttpMethod.Head, apiUrl);
+                    var response = await httpClient.SendAsync(request);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation("Resolved working API URL for model {ModelId}: {Url}", model.Id, apiUrl);
+                        return apiUrl;
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogDebug(ex, "API URL {Url} failed HEAD request", apiUrl);
+                }
+                catch (TaskCanceledException)
+                {
+                    _logger.LogDebug("API URL {Url} request timed out", apiUrl);
+                }
+
+                // Try with direct URL
+                string directUrl = $"{baseUrl}{path}";
+                RaiseInferenceProgress($"Trying direct URL: {directUrl}");
+
+                try
+                {
+                    // Make a HEAD request to check if the URL exists
+                    var request = new HttpRequestMessage(HttpMethod.Head, directUrl);
+                    var response = await httpClient.SendAsync(request);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation("Resolved working direct URL for model {ModelId}: {Url}", model.Id, directUrl);
+                        return directUrl;
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogDebug(ex, "Direct URL {Url} failed HEAD request", directUrl);
+                }
+                catch (TaskCanceledException)
+                {
+                    _logger.LogDebug("Direct URL {Url} request timed out", directUrl);
+                }
+            }
+
+            // If we got here, none of the URLs worked - return the original URL
+            _logger.LogWarning("Could not resolve any working URL for model {ModelId}, using original URL", model.Id);
+            return model.DownloadUrl;
+        }
+
         // Update for OnnxAIService.cs - DownloadModelAsync method
 
         public async Task DownloadModelAsync(string modelId, IProgress<double>? progress = null)
@@ -229,14 +380,16 @@ namespace Nexi.Services.AI
                 throw new InvalidOperationException($"Download URL not found for model {modelId}");
             }
 
-            RaiseInferenceProgress($"Starting download of {model.Name}...");
+            // Resolve the URL (try multiple potential paths)
+            string downloadUrl = await ResolveModelUrlAsync(model, progress);
+            RaiseInferenceProgress($"Using download URL: {downloadUrl}");
 
             // Create the model directory if it doesn't exist
             var modelDir = Path.Combine(_modelsBasePath, modelId);
             Directory.CreateDirectory(modelDir);
 
             // Determine the file extension from the URL
-            var extension = Path.GetExtension(model.DownloadUrl);
+            var extension = Path.GetExtension(downloadUrl);
             if (string.IsNullOrEmpty(extension))
             {
                 extension = ".onnx"; // Default extension for ONNX models
@@ -246,9 +399,13 @@ namespace Nexi.Services.AI
             var filePath = Path.Combine(modelDir, fileName);
 
             // Check if this model requires authentication
-            bool requiresAuth = model.DownloadUrl.Contains("huggingface.co/api/models") ||
+            bool requiresAuth = model.Provider == AIProvider.HuggingFace ||
+                              model.DownloadUrl.Contains("huggingface.co") ||
                               (model.Metadata.TryGetValue("RequiresAuth", out var authValue) &&
                                authValue.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+            // Log the authentication requirement for debugging
+            _logger.LogInformation("Model {ModelId} authentication requirement: {RequiresAuth}", modelId, requiresAuth);
 
             if (requiresAuth)
             {
@@ -264,7 +421,7 @@ namespace Nexi.Services.AI
 
                     // This will handle prompting for token if needed
                     byte[] fileData = await modelRepository.DownloadModelWithAuthAsync(
-                        model.DownloadUrl,
+                        downloadUrl,
                         "HuggingFace",
                         model.Name,
                         authService,
@@ -298,19 +455,27 @@ namespace Nexi.Services.AI
                 // Standard download without authentication
                 try
                 {
-                    await DownloadFileAsync(model.DownloadUrl, filePath, progress);
+                    await DownloadFileAsync(downloadUrl, filePath, progress);
                 }
                 catch (FileNotFoundException ex)
                 {
                     // Handle file not found errors with clarity
-                    _logger.LogError(ex, "File not found at URL: {Url}", model.DownloadUrl);
+                    _logger.LogError(ex, "File not found at URL: {Url}", downloadUrl);
+                    await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
                     throw new FileNotFoundException($"The model file could not be found at the specified URL. Please check if the model is still available.", ex.FileName);
                 }
                 catch (HttpRequestException ex)
                 {
                     // Make HTTP errors clear
                     _logger.LogError(ex, "HTTP error when downloading: {StatusCode}", ex.StatusCode);
+                    await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
                     throw new HttpRequestException($"Network error occurred while downloading: {ex.Message}", ex, ex.StatusCode);
+                }
+                catch (IOException ex)
+                {
+                    _logger.LogError(ex, "IO error downloading model: {Message}", ex.Message);
+                    await _modelService.UpdateModelStatusAsync(modelId, ModelStatus.Error);
+                    throw;
                 }
             }
 
@@ -329,7 +494,6 @@ namespace Nexi.Services.AI
 
             RaiseInferenceProgress($"Model {model.Name} downloaded successfully");
         }
-
 
         public async Task LoadModelAsync(string modelId)
         {

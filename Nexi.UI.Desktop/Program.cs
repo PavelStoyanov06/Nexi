@@ -101,7 +101,13 @@ namespace Nexi.UI.Desktop
             // Make sure to register view models that might need updated services
             services.AddTransient<MainViewModel>();
             services.AddTransient<ChatHistoryViewModel>();
-            services.AddTransient<ModelsViewModel>();
+            services.AddTransient<ModelsViewModel>(sp => new ModelsViewModel(
+                sp.GetRequiredService<IAIModelService>(),
+                sp.GetRequiredService<IModelRepository>(),
+                sp.GetRequiredService<IAIService>(),
+                sp.GetRequiredService<ILogger<ModelsViewModel>>(),
+                sp.GetRequiredService<IDbContextFactory<NexiDbContext>>()
+            ));
             services.AddTransient<SettingsViewModel>();
             services.AddTransient<ApiTokensViewModel>();
 

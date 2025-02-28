@@ -48,6 +48,10 @@ namespace Nexi.Services.AI
                 if (TryGetCachedModels(out var cachedModels))
                 {
                     _logger.LogInformation("Returning {Count} cached models", cachedModels.Count());
+
+                    // Important: Ensure all cached models exist in the database
+                    await EnsureModelsExistInDatabaseAsync(cachedModels);
+
                     return cachedModels;
                 }
 
@@ -94,7 +98,7 @@ namespace Nexi.Services.AI
                     }
                 }
 
-                // Save models to database
+                // Save models to database - this ensures they exist before allowing downloads
                 await SaveModelsToDbAsync(allModels);
 
                 // Cache the models
@@ -106,24 +110,50 @@ namespace Nexi.Services.AI
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex, "HTTP error getting available models: {Message}", ex.Message);
-                var fallbackModels = GetBuiltInOnnxModels().ToList();
-                foreach (var model in fallbackModels)
-                {
-                    model.Metadata["Source"] = "BuiltIn";
-                }
-                return fallbackModels;
+                return GetBuiltInOnnxModels();
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "JSON parsing error: {Message}", ex.Message);
                 return GetBuiltInOnnxModels();
             }
-            catch (Exception ex) when (ex is not HttpRequestException && ex is not JsonException)
+            catch (DbUpdateException ex)
             {
-                _logger.LogError(ex, "Unexpected error getting available models: {Message}", ex.Message);
+                _logger.LogError(ex, "Database error syncing models: {Message}", ex.Message);
                 return GetBuiltInOnnxModels();
             }
         }
+
+        private async Task EnsureModelsExistInDatabaseAsync(IEnumerable<AIModelData> models)
+        {
+            try
+            {
+                using var context = await _contextFactory.CreateDbContextAsync();
+
+                // Get existing model IDs
+                var existingIds = await context.AIModels
+                    .Select(m => m.Id)
+                    .ToListAsync();
+
+                // Find models that don't exist in the database yet
+                var newModels = models
+                    .Where(m => !existingIds.Contains(m.Id))
+                    .ToList();
+
+                if (newModels.Any())
+                {
+                    _logger.LogInformation("Adding {Count} new models to database from cache", newModels.Count);
+                    await context.AIModels.AddRangeAsync(newModels);
+                    await context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ensuring models exist in database");
+                // We log but don't throw to avoid breaking the application
+            }
+        }
+
 
         public async Task<AIModelData> GetModelInfoAsync(string id)
         {
@@ -469,7 +499,7 @@ namespace Nexi.Services.AI
             // Add metadata
             model.Metadata = new Dictionary<string, string>
             {
-                ["RequiresAuth"] = isAuthenticated ? "true" : "false",
+                ["RequiresAuth"] = "true", // Always true for HuggingFace models
                 ["Source"] = "HuggingFace",
                 ["OriginalId"] = originalId  // Store the original HuggingFace ID
             };
