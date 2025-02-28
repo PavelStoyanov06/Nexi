@@ -1,6 +1,7 @@
 ﻿using Interfaces;
 using Microsoft.Extensions.Logging;
 using Nexi.Data.Models;
+using System.Threading.Tasks;
 
 namespace Nexi.Services.Interfaces
 {
@@ -29,6 +30,8 @@ namespace Nexi.Services.Interfaces
             string provider,
             string modelName,
             IAuthenticationService authService,
-            ILogger logger);
+        ILogger logger);
+
+        Task <IEnumerable<AIModelData>> GetModelsPageAsync(int page, int pageSize, CancellationToken cancellationToken = default);
     }
 }

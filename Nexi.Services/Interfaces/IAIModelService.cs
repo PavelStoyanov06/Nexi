@@ -44,5 +44,7 @@ namespace Nexi.Services.Interfaces
         /// Get the list of supported quantization levels for a model
         /// </summary>
         Task<IEnumerable<string>> GetSupportedQuantizationLevelsAsync(string modelId);
+
+        Task<IEnumerable<AIModelData>> GetModelsBatchAsync(IEnumerable<string> ids);
     }
 }

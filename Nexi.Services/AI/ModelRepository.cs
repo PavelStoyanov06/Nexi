@@ -294,11 +294,15 @@ namespace Nexi.Services.AI
             };
         }
 
-        private async Task<IEnumerable<AIModelData>> FetchOnnxModelsFromHuggingFaceAsync()
+        private async Task<IEnumerable<AIModelData>> FetchOnnxModelsFromHuggingFaceAsync(
+    int limit = 100,
+    int offset = 0,
+    CancellationToken cancellationToken = default)
         {
             try
             {
-                _logger.LogInformation("Fetching models from HuggingFace API");
+                _logger.LogInformation("Fetching models from HuggingFace API (limit: {Limit}, offset: {Offset})",
+                    limit, offset);
 
                 // Check if we have a token for authenticated requests
                 var authService = _serviceProvider.GetService(typeof(IAuthenticationService)) as IAuthenticationService;
@@ -313,28 +317,32 @@ namespace Nexi.Services.AI
 
                 var models = new List<AIModelData>();
 
-                // Get popular models first - specifically filtering for ONNX models
-                await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=downloads&filter=onnx", token, models);
+                // Get models with paging
+                string apiUrl = $"https://huggingface.co/api/models?limit={limit}&offset={offset}&filter=onnx";
 
-                // Then get recent models
-                await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=lastModified&filter=onnx", token, models);
+                await FetchModelsWithQuery(apiUrl, token, models, cancellationToken);
 
                 _logger.LogInformation("Retrieved {Count} ONNX models from HuggingFace", models.Count);
                 return models;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Model fetching was cancelled");
+                return Enumerable.Empty<AIModelData>();
             }
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex, "HTTP error fetching models from HuggingFace API: {Message}", ex.Message);
                 throw;
             }
-            catch (Exception ex) when (ex is not HttpRequestException)
-            {
-                _logger.LogError(ex, "Unexpected error fetching models from HuggingFace API: {Message}", ex.Message);
-                throw;
-            }
         }
 
-        private async Task FetchModelsWithQuery(string apiUrl, string token, List<AIModelData> allModels)
+
+        private async Task FetchModelsWithQuery(
+            string apiUrl,
+            string token,
+            List<AIModelData> allModels,
+            CancellationToken cancellationToken = default)
         {
             bool isAuthenticated = !string.IsNullOrEmpty(token);
             using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
@@ -348,7 +356,7 @@ namespace Nexi.Services.AI
             // Add user agent
             request.Headers.Add("User-Agent", "Nexi-App/1.0");
 
-            using var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -356,12 +364,14 @@ namespace Nexi.Services.AI
                 return;
             }
 
-            string jsonResponse = await response.Content.ReadAsStringAsync();
+            string jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(jsonResponse);
             var existingIds = allModels.Select(m => m.Id).ToHashSet();
 
             foreach (var element in document.RootElement.EnumerateArray())
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
                 if (!element.TryGetProperty("id", out var idElement))
                     continue;
@@ -379,6 +389,80 @@ namespace Nexi.Services.AI
                 existingIds.Add(modelId);
             }
         }
+
+        public async Task<IEnumerable<AIModelData>> GetModelsPageAsync(
+    int page,
+    int pageSize,
+    CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // If a fresh cache doesn't exist, create it
+                if (!TryGetCachedModels(out var _))
+                {
+                    // Don't await - this will asynchronously start refreshing the cache
+                    _ = RefreshCacheInBackgroundAsync();
+                }
+
+                // Check if we have a cached response (even if stale)
+                if (TryGetCachedModels(out var allModels))
+                {
+                    // Calculate pagination
+                    var pagedModels = allModels
+                        .Skip(page * pageSize)
+                        .Take(pageSize)
+                        .ToList();
+
+                    _logger.LogInformation("Returning {Count} models from page {Page}",
+                        pagedModels.Count, page);
+
+                    // Ensure all these models exist in the database
+                    await EnsureModelsExistInDatabaseAsync(pagedModels);
+                    return pagedModels;
+                }
+
+                // If we have no cache, fetch directly from HuggingFace with limit/offset
+                var huggingFaceModels = await FetchOnnxModelsFromHuggingFaceAsync(pageSize, page * pageSize);
+                if (huggingFaceModels.Any())
+                {
+                    await SaveModelsToDbAsync(huggingFaceModels);
+                    return huggingFaceModels;
+                }
+
+                // Fall back to built-in models with paging
+                return GetBuiltInOnnxModels()
+                    .Skip(page * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Model loading was cancelled");
+                return Enumerable.Empty<AIModelData>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting models page: {Message}", ex.Message);
+
+                // Return empty list on error
+                return Enumerable.Empty<AIModelData>();
+            }
+        }
+
+        // Add this new method for refreshing the cache in the background
+        private async Task RefreshCacheInBackgroundAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Starting background cache refresh");
+                await RefreshModelCatalogAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background cache refresh failed");
+            }
+        }
+
 
         private AIModelData CreateModelFromApiElement(JsonElement element, string originalId, string modelId, bool isAuthenticated)
         {

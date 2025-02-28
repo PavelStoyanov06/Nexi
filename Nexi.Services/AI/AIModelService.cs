@@ -120,6 +120,22 @@ namespace Nexi.Services.AI
             }
         }
 
+        public async Task<IEnumerable<AIModelData>> GetModelsBatchAsync(IEnumerable<string> ids)
+        {
+            using var context = await _contextFactory.CreateDbContextAsync();
+
+            // Create a hash set of IDs for better performance
+            var idSet = new HashSet<string>(ids);
+
+            // Query models that match any ID in the set
+            var models = await context.AIModels
+                .Where(m => idSet.Contains(m.Id))
+                .ToListAsync();
+
+            return models;
+        }
+
+
         public async Task<UserSettings> GetUserSettingsAsync()
         {
             using var context = await _contextFactory.CreateDbContextAsync();

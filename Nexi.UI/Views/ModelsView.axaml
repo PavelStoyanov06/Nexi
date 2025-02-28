@@ -91,153 +91,179 @@
         </Grid>
       </Border>
 
-      <!-- Models List -->
-      <ScrollViewer Grid.Row="1">
-        <ItemsControl ItemsSource="{CompiledBinding FilteredModels}"
+      <!-- Models List with Infinite Scrolling -->
+      <ScrollViewer Grid.Row="1" Name="ModelsScrollViewer">
+        <Grid RowDefinitions="*,Auto">
+          <!-- Models Grid -->
+          <ItemsControl Grid.Row="0" ItemsSource="{CompiledBinding FilteredModels}"
                       Margin="32,16">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <WrapPanel Orientation="Horizontal"/>
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ModelItemViewModel">
-              <Border Background="{DynamicResource SystemChromeMediumColor}"
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModelItemViewModel">
+                <Border Background="{DynamicResource SystemChromeMediumColor}"
                       CornerRadius="12"
                       BoxShadow="0 2 8 0 #30000000"
                       Width="360"
                       Height="320"
                       Margin="0,0,16,16">
-                <Grid RowDefinitions="Auto,*,Auto">
-                  <!-- Header with Category Badge -->
-                  <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="24,16,24,0">
-                    <Border Grid.Column="0"
-                            Background="{CompiledBinding BackgroundColor}"
-                            CornerRadius="12"
-                            Padding="12,6"
-                            HorizontalAlignment="Left">
-                      <TextBlock Text="{CompiledBinding Category}"
-                                FontSize="14"
-                                FontWeight="SemiBold"
-                                Foreground="White"/>
-                    </Border>
-
-                    <!-- Status Badge -->
-                    <Border Grid.Column="1"
-                            Background="{CompiledBinding Status, Converter={StaticResource ModelStatusToBrushConverter}}"
-                            CornerRadius="12"
-                            Padding="12,6">
-                      <TextBlock Text="{CompiledBinding StatusText}"
-                                FontSize="14"
-                                Foreground="White"/>
-                    </Border>
-                  </Grid>
-
-                  <!-- Main Content -->
-                  <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="24,16">
-                    <!-- Icon and Name -->
-                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <!-- Header with Category Badge -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="24,16,24,0">
                       <Border Grid.Column="0"
-                              Width="48"
-                              Height="48"
-                              CornerRadius="24"
-                              Background="{CompiledBinding BackgroundColor}">
-                        <material:MaterialIcon Kind="Brain"
+                              Background="{CompiledBinding BackgroundColor}"
+                              CornerRadius="12"
+                              Padding="12,6"
+                              HorizontalAlignment="Left">
+                        <TextBlock Text="{CompiledBinding Category}"
+                                 FontSize="14"
+                                 FontWeight="SemiBold"
+                                 Foreground="White"/>
+                      </Border>
+
+                      <!-- Status Badge -->
+                      <Border Grid.Column="1"
+                              Background="{CompiledBinding Status, Converter={StaticResource ModelStatusToBrushConverter}}"
+                              CornerRadius="12"
+                              Padding="12,6">
+                        <TextBlock Text="{CompiledBinding StatusText}"
+                                 FontSize="14"
+                                 Foreground="White"/>
+                      </Border>
+                    </Grid>
+
+                    <!-- Main Content -->
+                    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto" Margin="24,16">
+                      <!-- Icon and Name -->
+                      <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+                        <Border Grid.Column="0"
+                                Width="48"
+                                Height="48"
+                                CornerRadius="24"
+                                Background="{CompiledBinding BackgroundColor}">
+                          <material:MaterialIcon Kind="Brain"
                                                Width="24"
                                                Height="24"
                                                Foreground="White"/>
-                      </Border>
+                        </Border>
 
-                      <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{CompiledBinding Name}"
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                          <TextBlock Text="{CompiledBinding Name}"
                                    FontSize="16"
                                    FontWeight="SemiBold"
                                    TextWrapping="Wrap"
                                    MaxHeight="44"
                                    MaxWidth="250"
                                    TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{CompiledBinding Size}"
+                          <TextBlock Text="{CompiledBinding Size}"
                                    FontSize="14"
                                    Opacity="0.7"/>
-                      </StackPanel>
-                    </Grid>
+                        </StackPanel>
+                      </Grid>
 
-                    <!-- Description -->
-                    <TextBlock Grid.Row="1"
+                      <!-- Description -->
+                      <TextBlock Grid.Row="1"
                                Text="{CompiledBinding Description}"
                                TextWrapping="Wrap"
                                MaxHeight="60"
                                TextTrimming="CharacterEllipsis"
                                Margin="0,0,0,12"/>
 
-                    <!-- Capabilities Section -->
-                    <StackPanel Grid.Row="2" Margin="0,0,0,12">
-                      <TextBlock Text="Capabilities:"
+                      <!-- Capabilities Section -->
+                      <StackPanel Grid.Row="2" Margin="0,0,0,12">
+                        <TextBlock Text="Capabilities:"
                                FontWeight="SemiBold"
                                Margin="0,0,0,4"/>
-                      <Border MaxWidth="310">
-                        <TextBlock Text="{CompiledBinding TasksDisplay}"
+                        <Border MaxWidth="310">
+                          <TextBlock Text="{CompiledBinding TasksDisplay}"
                                  TextWrapping="Wrap"
                                  MaxHeight="36"
                                  TextTrimming="CharacterEllipsis"/>
-                      </Border>
-                    </StackPanel>
-
-                    <!-- Version Info -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16">
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <material:MaterialIcon Kind="Tag"
-                                               Opacity="0.7"/>
-                        <TextBlock Text="{CompiledBinding Version}"
-                                   Opacity="0.7"/>
+                        </Border>
                       </StackPanel>
-                    </StackPanel>
 
-                    <!-- Progress Bar (only visible when downloading) -->
-                    <ProgressBar Grid.Row="4"
+                      <!-- Version Info -->
+                      <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <material:MaterialIcon Kind="Tag"
+                                               Opacity="0.7"/>
+                          <TextBlock Text="{CompiledBinding Version}"
+                                   Opacity="0.7"/>
+                        </StackPanel>
+                      </StackPanel>
+
+                      <!-- Progress Bar (only visible when downloading) -->
+                      <ProgressBar Grid.Row="4"
                                  Value="{CompiledBinding DownloadProgress}"
                                  IsVisible="{CompiledBinding IsDownloading}"
                                  Maximum="1.0"
                                  Height="4"
                                  Margin="0,16,0,0"/>
-                  </Grid>
+                    </Grid>
 
-                  <!-- Actions Footer -->
-                  <Border Grid.Row="2"
+                    <!-- Actions Footer -->
+                    <Border Grid.Row="2"
                           Background="{DynamicResource SystemChromeLowColor}"
                           Padding="24,12"
                           CornerRadius="0,0,12,12">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <!-- Info Text -->
-                      <TextBlock Grid.Column="0"
+                      <Grid ColumnDefinitions="*,Auto">
+                        <!-- Info Text -->
+                        <TextBlock Grid.Column="0"
                                  Text="{CompiledBinding StatusText}"
                                  VerticalAlignment="Center"/>
 
-                      <!-- Action Buttons -->
-                      <StackPanel Grid.Column="1"
+                        <!-- Action Buttons -->
+                        <StackPanel Grid.Column="1"
                                  Orientation="Horizontal"
                                  Spacing="8">
-                        <!-- Download Button - only shown for NotDownloaded models -->
-                        <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DownloadModelCommand}"
+                          <!-- Download Button - only shown for NotDownloaded models -->
+                          <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DownloadModelCommand}"
                                 CommandParameter="{CompiledBinding Id}"
                                 Content="Download"
                                 Classes="accent-button"
                                 IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.NotDownloaded}}"/>
 
-                        <!-- Delete Button - only shown for Downloaded models -->
-                        <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DeleteModelCommand}"
+                          <!-- Delete Button - only shown for Downloaded models -->
+                          <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).DeleteModelCommand}"
                                 CommandParameter="{CompiledBinding Id}"
                                 Content="Remove"
                                 Classes="danger-button"
                                 IsVisible="{CompiledBinding Status, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ModelStatus.Downloaded}}"/>
-                      </StackPanel>
-                    </Grid>
-                  </Border>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+
+                          <!-- Auth Toggle Button - for debugging -->
+                          <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ModelsViewModel)DataContext).ToggleAuthRequirementCommand}"
+                                CommandParameter="{CompiledBinding Id}"
+                                Content="Auth ⚙"
+                                Classes="secondary-button"
+                                ToolTip.Tip="Toggle authentication requirement"/>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Load More Footer -->
+          <StackPanel Grid.Row="1"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,20"
+                    IsVisible="{CompiledBinding HasMoreModels}">
+            <Button Command="{CompiledBinding LoadMoreModelsCommand}"
+                    Content="Load More Models"
+                    Classes="accent-button"
+                    IsEnabled="{CompiledBinding !IsLoadingMoreModels}"/>
+            <ProgressBar IsIndeterminate="True"
+                       Width="100"
+                       Height="2"
+                       Margin="0,8,0,0"
+                       IsVisible="{CompiledBinding IsLoadingMoreModels}"/>
+          </StackPanel>
+        </Grid>
       </ScrollViewer>
     </Grid>
 
@@ -284,6 +310,14 @@
       <Setter Property="Background" Value="#E53935"/>
       <Setter Property="Foreground" Value="White"/>
       <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
+    <Style Selector="Button.secondary-button">
+      <Setter Property="Background" Value="#607D8B"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="FontSize" Value="12"/>
       <Setter Property="CornerRadius" Value="4"/>
     </Style>
 

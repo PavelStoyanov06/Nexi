@@ -13,6 +13,8 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reactive.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
@@ -33,6 +35,11 @@ namespace Nexi.UI.ViewModels
         private string _selectedCategory = "All";
         private readonly ObservableAsPropertyHelper<ObservableCollection<ModelItemViewModel>> _filteredModels;
         public ICommand ToggleAuthRequirementCommand { get; }
+        private bool _isLoadingMoreModels = false;
+        private bool _hasMoreModels = true;
+        private int _currentPage = 0;
+        private const int PAGE_SIZE = 25; // Number of models per page
+        private CancellationTokenSource _loadingCts = new CancellationTokenSource();
 
         public ModelsViewModel(
             IAIModelService aiModelService,
@@ -56,6 +63,7 @@ namespace Nexi.UI.ViewModels
             ToggleShowDownloadedCommand = ReactiveCommand.Create(() => ShowOnlyDownloaded = !ShowOnlyDownloaded);
             ClearSearchCommand = ReactiveCommand.Create(() => SearchQuery = string.Empty);
             ToggleAuthRequirementCommand = ReactiveCommand.CreateFromTask<string>(ToggleAuthRequirementAsync);
+            LoadMoreModelsCommand = ReactiveCommand.CreateFromTask(LoadMoreModelsAsync);
 
             // Subscribe to AI service events
             _aiService.OnInferenceProgress += (sender, message) =>
@@ -115,6 +123,21 @@ namespace Nexi.UI.ViewModels
             // Load models on startup
             _ = RefreshModelsAsync();
         }
+
+        public bool IsLoadingMoreModels
+        {
+            get => _isLoadingMoreModels;
+            private set => this.RaiseAndSetIfChanged(ref _isLoadingMoreModels, value);
+        }
+
+        public bool HasMoreModels
+        {
+            get => _hasMoreModels;
+            private set => this.RaiseAndSetIfChanged(ref _hasMoreModels, value);
+        }
+
+        // Add this command
+        public ICommand LoadMoreModelsCommand { get; }
 
         private async Task ToggleAuthRequirementAsync(string modelId)
         {
@@ -217,53 +240,43 @@ namespace Nexi.UI.ViewModels
                 IsLoading = true;
                 StatusMessage = "Loading models...";
 
-                // Get available models from repository
-                var models = await _modelRepository.GetAvailableModelsAsync();
+                // Cancel any pending loading operations
+                _loadingCts.Cancel();
+                _loadingCts = new CancellationTokenSource();
 
-                // Get model data from database
-                var dbModels = await _aiModelService.GetAllModelsAsync();
+                // Reset the state
+                _currentPage = 0;
+                HasMoreModels = true;
+                AvailableModels.Clear();
 
-                // Merge the data
-                var viewModels = new ObservableCollection<ModelItemViewModel>();
-
-                foreach (var model in models)
-                {
-                    // Update with database information if available
-                    var dbModel = dbModels.FirstOrDefault(m => m.Id == model.Id);
-                    if (dbModel != null)
-                    {
-                        model.Status = dbModel.Status;
-                        model.LocalPath = dbModel.LocalPath;
-                        model.DownloadedDate = dbModel.DownloadedDate;
-                    }
-
-                    var viewModel = ModelItemViewModel.Create(model);
-
-                    // Add category tag based on model size or specialization
-                    viewModel.Category = GetModelCategory(viewModel);
-
-                    // Add color based on model size
-                    viewModel.BackgroundColor = GetModelBackgroundColor(viewModel);
-
-                    // Add appropriate status text
-                    viewModel.StatusText = GetStatusText(viewModel.Status);
-
-                    viewModels.Add(viewModel);
-                }
-
-                AvailableModels = viewModels;
-                StatusMessage = $"Loaded {viewModels.Count} models.";
+                // Load the initial page
+                await LoadMoreModelsAsync();
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                _logger.LogError(ex, "Error refreshing models: {Message}", ex.Message);
+                _logger.LogInformation("Model loading was cancelled");
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "Network error refreshing models: {Message}", ex.Message);
                 StatusMessage = $"Error loading models: {ex.Message}";
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "JSON error parsing models: {Message}", ex.Message);
+                StatusMessage = $"Error parsing model data: {ex.Message}";
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Database error saving models: {Message}", ex.Message);
+                StatusMessage = $"Error saving models to database: {ex.Message}";
             }
             finally
             {
                 IsLoading = false;
             }
         }
+
 
         // Add these helper methods to your ModelsViewModel.cs class
 
@@ -364,6 +377,86 @@ namespace Nexi.UI.ViewModels
             return AIProvider.Local;
         }
 
+        private async Task LoadMoreModelsAsync()
+        {
+            if (IsLoadingMoreModels || !HasMoreModels)
+                return;
+
+            try
+            {
+                IsLoadingMoreModels = true;
+                StatusMessage = $"Loading models (page {_currentPage + 1})...";
+
+                var token = _loadingCts.Token;
+
+                // Get available models from repository with paging
+                var models = await _modelRepository.GetModelsPageAsync(_currentPage, PAGE_SIZE, token);
+
+                // Get model data from database
+                var dbModels = await _aiModelService.GetModelsBatchAsync(
+                    models.Select(m => m.Id).ToList());
+
+                // Merge the data
+                var newModels = new List<ModelItemViewModel>();
+
+                foreach (var model in models)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    // Update with database information if available
+                    var dbModel = dbModels.FirstOrDefault(m => m.Id == model.Id);
+                    if (dbModel != null)
+                    {
+                        model.Status = dbModel.Status;
+                        model.LocalPath = dbModel.LocalPath;
+                        model.DownloadedDate = dbModel.DownloadedDate;
+                    }
+
+                    var viewModel = ModelItemViewModel.Create(model);
+
+                    // Add category tag based on model size or specialization
+                    viewModel.Category = GetModelCategory(viewModel);
+
+                    // Add color based on model size
+                    viewModel.BackgroundColor = GetModelBackgroundColor(viewModel);
+
+                    // Add appropriate status text
+                    viewModel.StatusText = GetStatusText(viewModel.Status);
+
+                    newModels.Add(viewModel);
+                }
+
+                // Check if we have more models
+                HasMoreModels = newModels.Count >= PAGE_SIZE;
+                _currentPage++;
+
+                // Add the new models to the collection on the UI thread
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    foreach (var model in newModels)
+                    {
+                        AvailableModels.Add(model);
+                    }
+                });
+
+                StatusMessage = $"Loaded {AvailableModels.Count} models" +
+                               (HasMoreModels ? " (scroll for more)" : "");
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Loading more models was cancelled");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading more models: {Message}", ex.Message);
+                StatusMessage = $"Error loading models: {ex.Message}";
+            }
+            finally
+            {
+                IsLoadingMoreModels = false;
+            }
+        }
+
         private async Task DownloadModelAsync(string modelId)
         {
             // Find the model in our collection
@@ -406,7 +499,13 @@ namespace Nexi.UI.ViewModels
                     Dispatcher.UIThread.Post(() =>
                     {
                         model.DownloadProgress = value;
-                        StatusMessage = $"Downloading {model.Name}: {value:P0}";
+
+                        // Format as percentage with proper rounding
+                        int percentage = (int)Math.Round(value * 100);
+                        StatusMessage = $"Downloading {model.Name}: {percentage}%";
+
+                        // Update the status text in the model as well
+                        model.StatusText = $"Downloading ({percentage}%)";
                     });
                 });
 
