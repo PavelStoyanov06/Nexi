@@ -241,6 +241,11 @@ namespace Nexi.Services.AI
 
                 // Determine the file extension from the URL
                 var extension = Path.GetExtension(modelInfo.DownloadUrl);
+                if (string.IsNullOrEmpty(extension))
+                {
+                    extension = ".onnx"; // Default extension for ONNX models
+                }
+
                 var fileName = $"{modelId}{extension}";
                 var filePath = Path.Combine(modelDir, fileName);
 
@@ -301,59 +306,203 @@ namespace Nexi.Services.AI
                 else
                 {
                     // Standard download without authentication
-                    await DownloadFileAsync(modelInfo.DownloadUrl, filePath, progress);
-                }
-
-                // Try to find alternative ONNX files if the main download fails
-                if (!File.Exists(filePath) || new FileInfo(filePath).Length == 0)
-                {
-                    RaiseInferenceProgress("Primary model file not found, trying alternative locations...");
-
-                    // Repository ID from metadata
-                    string? repoId = null;
-                    if (modelInfo.Metadata.TryGetValue("Repo", out var repo))
+                    try
                     {
-                        repoId = repo;
+                        await DownloadFileAsync(modelInfo.DownloadUrl, filePath, progress);
                     }
-
-                    // If we have a repo ID, try alternative file paths
-                    if (!string.IsNullOrEmpty(repoId))
+                    catch (FileNotFoundException)
                     {
-                        var alternativePaths = new string[]
+                        // For HuggingFace models, the URL might be different from the default pattern
+                        if (modelInfo.DownloadUrl.Contains("huggingface.co") &&
+                            modelInfo.Metadata.TryGetValue("OriginalId", out var originalId))
                         {
-                            "model.onnx",
-                            "onnx/model.onnx",
-                            "models/model.onnx",
-                            "encoder.onnx",
-                            "decoder.onnx",
-                            "model_quantized.onnx",
-                            "model_opt.onnx",
-                            "optimized/model.onnx"
-                        };
+                            RaiseInferenceProgress("Primary model file not found, trying alternative paths...");
 
-                        foreach (var path in alternativePaths)
-                        {
+                            // Possible file paths in HuggingFace repositories
+                            var alternativePaths = new string[]
+                            {
+                        // Common ONNX model paths (prioritizing based on observed patterns)
+                        "onnx/model.onnx",              // Most common for ONNX community models
+                        "model.onnx",                   // Base path
+                        "onnx/inference.onnx",          // Alternative name in onnx folder
+                        "models/model.onnx",
+                        "onnx_model.onnx",
+                        "onnx_models/model.onnx",
+                        "onnx/decoder_model.onnx",      // Transformer models may use this pattern
+                        "onnx/encoder_model.onnx",
+                        "model_quantized.onnx",
+                        "model_optimized.onnx",
+                        "model_merged.onnx",
+                        
+                        // Llama model specific patterns
+                        "onnx/llama-model.onnx",
+                        "onnx/llm-model.onnx",
+                        
+                        // Try with folder structure shown in the example repo
+                        "onnx/model_quantized.onnx",
+                        "onnx/model_optimized.onnx",
+                        
+                        // Common path patterns
+                        "encoder.onnx",
+                        "decoder.onnx",
+                        "model_opt.onnx",
+                        "optimized/model.onnx",
+                        
+                        // Try by model type/name
+                        $"{modelId.Split('-').Last()}.onnx",
+                        $"model/{modelId.Split('-').Last()}.onnx",
+                        $"onnx/{modelId.Split('-').Last()}.onnx",
+                        $"{modelInfo.Name.ToLowerInvariant().Replace(" ", "_")}.onnx",
+                        $"onnx/{modelInfo.Name.ToLowerInvariant().Replace(" ", "_")}.onnx",
+                        
+                        // Try with different file extensions
+                        "model.ort",
+                        "onnx_model.ort",
+                        "onnx/model.ort",
+                        "best_model.onnx",
+                        "final_model.onnx",
+                        
+                        // Try in root with index
+                        "model_0.onnx",
+                        "onnx/model_0.onnx"
+                            };
+
+                            bool found = false;
+
+                            // First, try to discover available files in the repository
                             try
                             {
-                                var alternativeUrl = $"https://huggingface.co/{repoId}/resolve/main/{path}";
-                                var altFileName = Path.GetFileName(path);
-                                var altFilePath = Path.Combine(modelDir, altFileName);
+                                RaiseInferenceProgress($"Attempting to discover ONNX files in repository: {originalId}");
 
-                                RaiseInferenceProgress($"Trying alternative path: {path}");
-                                await DownloadFileAsync(alternativeUrl, altFilePath, progress);
+                                // Use the API to get repository contents
+                                var contentsUrl = $"https://huggingface.co/api/models/{originalId}/tree/main";
+                                using var client = new HttpClient();
+                                client.DefaultRequestHeaders.Add("User-Agent", "Nexi-App/1.0");
+                                var response = await client.GetAsync(contentsUrl);
 
-                                if (File.Exists(altFilePath) && new FileInfo(altFilePath).Length > 0)
+                                if (response.IsSuccessStatusCode)
                                 {
-                                    RaiseInferenceProgress($"Found model at alternative path: {path}");
-                                    filePath = altFilePath;
-                                    break;
+                                    var content = await response.Content.ReadAsStringAsync();
+                                    using var document = System.Text.Json.JsonDocument.Parse(content);
+
+                                    // Try to find ONNX files in the repository structure
+                                    var onnxFiles = new List<string>();
+
+                                    // Function to recursively search for ONNX files
+                                    void SearchForOnnxFiles(System.Text.Json.JsonElement element, string currentPath = "")
+                                    {
+                                        if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                        {
+                                            foreach (var item in element.EnumerateArray())
+                                            {
+                                                // Check if this is a file or directory
+                                                if (item.TryGetProperty("type", out var typeElement))
+                                                {
+                                                    string type = typeElement.GetString() ?? "";
+                                                    string path = "";
+
+                                                    if (item.TryGetProperty("path", out var pathElement))
+                                                    {
+                                                        path = pathElement.GetString() ?? "";
+                                                    }
+
+                                                    string fullPath = string.IsNullOrEmpty(currentPath) ? path : $"{currentPath}/{path}";
+
+                                                    if (type == "file" && (path.EndsWith(".onnx") || path.EndsWith(".ort")))
+                                                    {
+                                                        onnxFiles.Add(fullPath);
+                                                        _logger.LogInformation("Found ONNX file in repository: {Path}", fullPath);
+                                                    }
+                                                    else if (type == "directory" && item.TryGetProperty("children", out var childrenElement))
+                                                    {
+                                                        SearchForOnnxFiles(childrenElement, fullPath);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Start the search from the root
+                                    if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                    {
+                                        SearchForOnnxFiles(document.RootElement);
+                                    }
+
+                                    // Try discovered ONNX files first
+                                    foreach (var onnxFile in onnxFiles)
+                                    {
+                                        try
+                                        {
+                                            var alternativeUrl = $"https://huggingface.co/{originalId}/resolve/main/{onnxFile}";
+                                            var altFileName = Path.GetFileName(onnxFile);
+                                            var altFilePath = Path.Combine(modelDir, altFileName);
+
+                                            RaiseInferenceProgress($"Trying discovered ONNX file: {onnxFile}");
+                                            await DownloadFileAsync(alternativeUrl, altFilePath, progress);
+
+                                            if (File.Exists(altFilePath) && new FileInfo(altFilePath).Length > 0)
+                                            {
+                                                RaiseInferenceProgress($"Found model at: {onnxFile}");
+                                                filePath = altFilePath;
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogWarning(ex, "Failed to download discovered ONNX file: {Path}", onnxFile);
+                                            // Continue to next path
+                                        }
+                                    }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Failed to download from alternative path: {Path}", path);
-                                // Continue to next path
+                                _logger.LogWarning(ex, "Failed to discover ONNX files in repository. Will try predefined paths.");
                             }
+
+                            // If we haven't found a file yet, try the predefined paths
+                            if (!found)
+                            {
+                                foreach (var path in alternativePaths)
+                                {
+                                    try
+                                    {
+                                        var alternativeUrl = $"https://huggingface.co/{originalId}/resolve/main/{path}";
+                                        var altFileName = Path.GetFileName(path);
+                                        var altFilePath = Path.Combine(modelDir, altFileName);
+
+                                        RaiseInferenceProgress($"Trying alternative path: {path}");
+                                        await DownloadFileAsync(alternativeUrl, altFilePath, progress);
+
+                                        if (File.Exists(altFilePath) && new FileInfo(altFilePath).Length > 0)
+                                        {
+                                            RaiseInferenceProgress($"Found model at alternative path: {path}");
+                                            filePath = altFilePath;
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Failed to download from alternative path: {Path}", path);
+                                        // Continue to next path
+                                    }
+                                }
+                            }
+
+                            if (!found)
+                            {
+                                throw new FileNotFoundException(
+                                    $"Could not find ONNX model for {modelInfo.Name} in any of the common paths. " +
+                                    "This repository might not contain an ONNX model or might require authentication.",
+                                    filePath);
+                            }
+                        }
+                        else
+                        {
+                            // Re-throw for non-HuggingFace models
+                            throw;
                         }
                     }
                 }
@@ -382,7 +531,6 @@ namespace Nexi.Services.AI
                 throw;
             }
         }
-
 
         public async Task LoadModelAsync(string modelId)
         {
@@ -477,6 +625,8 @@ namespace Nexi.Services.AI
             }
         }
 
+        // Update this method in OnnxAIService.cs to properly handle download URLs
+
         private async Task DownloadFileAsync(string url, string destinationPath, IProgress<double>? progress = null)
         {
             try
@@ -491,6 +641,30 @@ namespace Nexi.Services.AI
                 {
                     _logger.LogError("Authentication required for {Url}. Using a different model source is recommended.", url);
                     throw new UnauthorizedAccessException($"Authentication required to download model from {url}. Please try a different model.");
+                }
+
+                // Check if the response was successful
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Failed to download from {Url} with status code {StatusCode}", url, response.StatusCode);
+
+                    // Check if we're trying to download from HuggingFace and potentially try alternative paths
+                    if (url.Contains("huggingface.co"))
+                    {
+                        // Try to extract the original HuggingFace repo ID to try alternative file paths
+                        string repoPath = url.Replace("https://huggingface.co/", "").Split("/resolve/")[0];
+
+                        // Log an informative error to help with debugging
+                        _logger.LogInformation("Model file not found at primary URL. Will try alternative paths for repository: {RepoPath}", repoPath);
+
+                        // This will allow the calling method to try alternative paths
+                        throw new FileNotFoundException($"Model file not found at {url}. The repository exists but the file structure might be different.", destinationPath);
+                    }
+                    else
+                    {
+                        // For non-HuggingFace URLs, just throw the standard error
+                        throw new HttpRequestException($"Failed to download from {url}: {response.StatusCode}");
+                    }
                 }
 
                 response.EnsureSuccessStatusCode();

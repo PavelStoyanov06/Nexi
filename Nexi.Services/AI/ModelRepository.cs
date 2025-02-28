@@ -21,13 +21,13 @@ namespace Nexi.Services.AI
         private const string ONNX_MODEL_ZOO = "https://github.com/onnx/models/tree/main/";
 
         public ModelRepository(
-    IDbContextFactory<NexiDbContext> contextFactory,
-    ILogger<ModelRepository> logger,
-    IServiceProvider serviceProvider) // Add this parameter
+            IDbContextFactory<NexiDbContext> contextFactory,
+            ILogger<ModelRepository> logger,
+            IServiceProvider serviceProvider)
         {
             _contextFactory = contextFactory;
             _logger = logger;
-            _serviceProvider = serviceProvider; // Store the service provider
+            _serviceProvider = serviceProvider;
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
             _httpClient.Timeout = TimeSpan.FromMinutes(2); // Increased timeout for API requests
@@ -459,9 +459,11 @@ namespace Nexi.Services.AI
                 {
                     try
                     {
-                        // Basic properties
-                        string id = element.GetProperty("id").GetString() ?? "";
-                        string modelId = id.Replace("/", "-").ToLowerInvariant();
+                        // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
+                        string originalId = element.GetProperty("id").GetString() ?? "";
+
+                        // Convert to safe ID format (e.g., "microsoft-deepspeed-chat")
+                        string modelId = originalId.Replace("/", "-").ToLowerInvariant();
 
                         // Skip if we already have this model
                         if (existingIds.Contains(modelId))
@@ -473,13 +475,13 @@ namespace Nexi.Services.AI
                         string modelName;
                         if (element.TryGetProperty("modelId", out var modelIdElement) && !string.IsNullOrEmpty(modelIdElement.GetString()))
                         {
-                            modelName = modelIdElement.GetString() ?? id;
+                            modelName = modelIdElement.GetString() ?? originalId;
                         }
                         else
                         {
                             // Use the last part of the ID as the name
-                            var parts = id.Split('/');
-                            modelName = parts.Length > 1 ? parts[1] : id;
+                            var parts = originalId.Split('/');
+                            modelName = parts.Length > 1 ? parts[1] : originalId;
                         }
 
                         // Format the name nicely - replace dashes with spaces and capitalize words
@@ -511,18 +513,22 @@ namespace Nexi.Services.AI
 
                         // Guess model size based on task
                         string modelSize = "Unknown";
-                        if (id.Contains("small") || id.Contains("tiny") || id.Contains("mini"))
+                        if (originalId.Contains("small") || originalId.Contains("tiny") || originalId.Contains("mini"))
                         {
                             modelSize = "Small (~100MB)";
                         }
-                        else if (id.Contains("base") || id.Contains("medium"))
+                        else if (originalId.Contains("base") || originalId.Contains("medium"))
                         {
                             modelSize = "Medium (~500MB)";
                         }
-                        else if (id.Contains("large") || id.Contains("big"))
+                        else if (originalId.Contains("large") || originalId.Contains("big"))
                         {
                             modelSize = "Large (~1GB+)";
                         }
+
+                        // Notice from the repo structure that ONNX models are often in the /onnx folder
+                        // We'll use the API directly instead of guessing file paths
+                        string downloadUrl = $"https://huggingface.co/api/models/{originalId}/onnx";
 
                         // Get model info object
                         var modelInfo = new ModelInfo
@@ -531,8 +537,7 @@ namespace Nexi.Services.AI
                             Name = modelName,
                             Description = description,
                             Provider = AIProvider.HuggingFace,
-                            // Fix for models that might use a different filename convention
-                            DownloadUrl = $"https://huggingface.co/{id}/resolve/main/model.onnx",
+                            DownloadUrl = downloadUrl,
                             Version = "latest",
                             Size = modelSize,
                             CreatedAt = DateTime.UtcNow,
@@ -583,8 +588,9 @@ namespace Nexi.Services.AI
                         // Add metadata
                         var metadata = new Dictionary<string, string>
                         {
-                            ["RequiresAuth"] = isAuthenticated ? "false" : "true",
-                            ["Source"] = "HuggingFace"
+                            ["RequiresAuth"] = isAuthenticated ? "true" : "false",
+                            ["Source"] = "HuggingFace",
+                            ["OriginalId"] = originalId  // Store the original HuggingFace ID
                         };
 
                         // Store download stats if available
@@ -614,7 +620,6 @@ namespace Nexi.Services.AI
         }
 
 
-        // This method is deliberately disabled to avoid unauthorized access errors
         private async Task<IEnumerable<ModelInfo>> FetchOnnxModelsFromHuggingFaceAsync()
         {
             try
@@ -641,7 +646,7 @@ namespace Nexi.Services.AI
 
                 var models = new List<ModelInfo>();
 
-                // Get popular models first
+                // Get popular models first - specifically filtering for ONNX models
                 await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=downloads&filter=onnx", token, models);
 
                 // Then get recent models
