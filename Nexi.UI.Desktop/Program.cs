@@ -81,25 +81,24 @@ namespace Nexi.UI.Desktop
                 config.AddDebug();
             });
 
+            // Excerpt from Program.cs showing updated service registration
             services.AddSingleton<IAuthenticationService, AuthenticationService>();
-
-            // It should look something like this:
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
             services.AddSingleton<IChatStorageService, ChatStorageService>();
             services.AddSingleton<IAIModelService, AIModelService>();
             services.AddSingleton<IUserSettingsService, UserSettingsService>();
-            services.AddSingleton<IModelRepository>(sp => new ModelRepository(
-                    sp.GetRequiredService<IDbContextFactory<NexiDbContext>>(),
-                    sp.GetRequiredService<ILogger<ModelRepository>>(),
-                    sp));
-            services.AddSingleton<IAIService>(sp => new OnnxAIService(
-                    sp.GetRequiredService<ILogger<OnnxAIService>>(),
-                    sp.GetRequiredService<IAIModelService>(),
-                    sp));
-            services.AddSingleton<IAuthenticationService, AuthenticationService>(); // Add this line
 
-            // Register view models
+            // Updated ModelRepository registration which uses the consolidated AIModelData model
+            services.AddSingleton<IModelRepository, ModelRepository>();
+
+            // Register OnnxAIService which depends on IAIModelService and IModelRepository
+            services.AddSingleton<IAIService>(sp => new OnnxAIService(
+                sp.GetRequiredService<ILogger<OnnxAIService>>(),
+                sp.GetRequiredService<IAIModelService>(),
+                sp)); // Pass service provider for resolving dependencies
+
+            // Make sure to register view models that might need updated services
             services.AddTransient<MainViewModel>();
             services.AddTransient<ChatHistoryViewModel>();
             services.AddTransient<ModelsViewModel>();

@@ -10,17 +10,14 @@ namespace Nexi.Services.AI
     {
         private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<AIModelService> _logger;
-        private readonly IModelRepository _modelRepository;
         private readonly string _modelsBasePath;
 
         public AIModelService(
             IDbContextFactory<NexiDbContext> contextFactory,
-            ILogger<AIModelService> logger,
-            IModelRepository modelRepository)
+            ILogger<AIModelService> logger)
         {
             _contextFactory = contextFactory;
             _logger = logger;
-            _modelRepository = modelRepository;
 
             // Set up the models directory in the user's app data folder
             _modelsBasePath = Path.Combine(
@@ -34,10 +31,6 @@ namespace Nexi.Services.AI
         public async Task<IEnumerable<AIModelData>> GetAllModelsAsync()
         {
             using var context = await _contextFactory.CreateDbContextAsync();
-
-            // First, ensure we have the latest model info in the database
-            await SyncModelsWithRepositoryAsync();
-
             return await context.AIModels
                 .OrderBy(m => m.Name)
                 .ToListAsync();
@@ -47,11 +40,6 @@ namespace Nexi.Services.AI
         {
             using var context = await _contextFactory.CreateDbContextAsync();
             return await context.AIModels.FindAsync(id);
-        }
-
-        public async Task<ModelInfo?> GetModelInfoAsync(string id)
-        {
-            return await _modelRepository.GetModelInfoAsync(id);
         }
 
         public async Task<AIModelData> UpdateModelStatusAsync(string id, ModelStatus status)
@@ -120,9 +108,14 @@ namespace Nexi.Services.AI
                 await context.SaveChangesAsync();
                 return true;
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogError(ex, "Error deleting model files for {ModelId}", id);
+                _logger.LogError(ex, "IO error deleting model files for {ModelId}", id);
+                return false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "Access denied when deleting model files for {ModelId}", id);
                 return false;
             }
         }
@@ -149,78 +142,25 @@ namespace Nexi.Services.AI
             return settings;
         }
 
-        public async Task<bool> IsQuantizedVersionAvailableAsync(string modelId)
+        public Task<bool> IsQuantizedVersionAvailableAsync(string modelId)
         {
             // For this implementation, we'll assume all models have quantized versions available
-            return await Task.FromResult(true);
+            return Task.FromResult(true);
         }
 
-        public async Task<IEnumerable<string>> GetSupportedQuantizationLevelsAsync(string modelId)
+        public Task<IEnumerable<string>> GetSupportedQuantizationLevelsAsync(string modelId)
         {
             // Common quantization levels for GGUF/GGML models
-            return await Task.FromResult(new List<string>
+            var levels = new List<string>
             {
                 "Q4_0", // Fastest, lowest quality
                 "Q4_K_M", // Good balance of speed and quality
                 "Q5_K_M", // Better quality, slightly slower
                 "Q6_K", // High quality, slower
                 "Q8_0" // Highest quality, slowest
-            });
-        }
+            };
 
-        private async Task SyncModelsWithRepositoryAsync()
-        {
-            try
-            {
-                // Get models from repository
-                var repoModels = await _modelRepository.GetAvailableModelsAsync();
-
-                using var context = await _contextFactory.CreateDbContextAsync();
-                var dbModels = await context.AIModels.ToListAsync();
-
-                // Add new models that are in the repository but not in the database
-                foreach (var repoModel in repoModels)
-                {
-                    if (!dbModels.Any(m => m.Id == repoModel.Id))
-                    {
-                        var newModel = new AIModelData
-                        {
-                            Id = repoModel.Id,
-                            Name = repoModel.Name,
-                            Description = repoModel.Description,
-                            Size = repoModel.Size,
-                            Version = repoModel.Version,
-                            Status = ModelStatus.NotDownloaded,
-                            CreatedAt = DateTime.UtcNow,
-                            LastModifiedAt = DateTime.UtcNow
-                        };
-
-                        context.AIModels.Add(newModel);
-                        _logger.LogInformation("Added new model: {ModelName} ({ModelId})", newModel.Name, newModel.Id);
-                    }
-                }
-
-                // Update existing models with latest info from repository
-                foreach (var dbModel in dbModels)
-                {
-                    var repoModel = repoModels.FirstOrDefault(m => m.Id == dbModel.Id);
-                    if (repoModel != null)
-                    {
-                        // Keep status and local path, update metadata
-                        dbModel.Name = repoModel.Name;
-                        dbModel.Description = repoModel.Description;
-                        dbModel.Size = repoModel.Size;
-                        dbModel.Version = repoModel.Version;
-                        dbModel.LastModifiedAt = DateTime.UtcNow;
-                    }
-                }
-
-                await context.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error syncing models with repository");
-            }
+            return Task.FromResult<IEnumerable<string>>(levels);
         }
     }
 }

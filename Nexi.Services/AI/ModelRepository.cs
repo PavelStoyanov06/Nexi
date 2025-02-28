@@ -17,7 +17,7 @@ namespace Nexi.Services.AI
         private readonly TimeSpan _cacheExpiration = TimeSpan.FromHours(12);
         private readonly IServiceProvider _serviceProvider;
 
-        // Model Repository URLs - using Microsoft ONNX Model Zoo and other public sources
+        // Model Repository URLs
         private const string ONNX_MODEL_ZOO = "https://github.com/onnx/models/tree/main/";
 
         public ModelRepository(
@@ -30,7 +30,7 @@ namespace Nexi.Services.AI
             _serviceProvider = serviceProvider;
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-            _httpClient.Timeout = TimeSpan.FromMinutes(2); // Increased timeout for API requests
+            _httpClient.Timeout = TimeSpan.FromMinutes(2);
 
             _modelCachePath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -40,8 +40,7 @@ namespace Nexi.Services.AI
             Directory.CreateDirectory(Path.GetDirectoryName(_modelCachePath));
         }
 
-
-        public async Task<IEnumerable<ModelInfo>> GetAvailableModelsAsync()
+        public async Task<IEnumerable<AIModelData>> GetAvailableModelsAsync()
         {
             try
             {
@@ -54,7 +53,7 @@ namespace Nexi.Services.AI
 
                 // Get models from HuggingFace - this is now our primary source
                 var huggingFaceModels = await FetchOnnxModelsFromHuggingFaceAsync();
-                List<ModelInfo> allModels;
+                List<AIModelData> allModels;
 
                 if (huggingFaceModels.Any())
                 {
@@ -62,7 +61,7 @@ namespace Nexi.Services.AI
                     _logger.LogInformation("Successfully fetched {Count} models from HuggingFace", huggingFaceModels.Count());
                     allModels = huggingFaceModels.ToList();
 
-                    // Add a few built-in models as fallback for offline usage, but limit to just the important ones
+                    // Add a few built-in models as fallback for offline usage
                     var builtInModels = GetBuiltInOnnxModels().Where(m =>
                         m.Id.Contains("bert") ||
                         m.Id.Contains("distil") ||
@@ -104,11 +103,9 @@ namespace Nexi.Services.AI
                 _logger.LogInformation("Returning {Count} models (HuggingFace + built-in)", allModels.Count);
                 return allModels;
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Error getting available models");
-
-                // Fall back to built-in models in case of failure
+                _logger.LogError(ex, "HTTP error getting available models: {Message}", ex.Message);
                 var fallbackModels = GetBuiltInOnnxModels().ToList();
                 foreach (var model in fallbackModels)
                 {
@@ -116,119 +113,112 @@ namespace Nexi.Services.AI
                 }
                 return fallbackModels;
             }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "JSON parsing error: {Message}", ex.Message);
+                return GetBuiltInOnnxModels();
+            }
+            catch (Exception ex) when (ex is not HttpRequestException && ex is not JsonException)
+            {
+                _logger.LogError(ex, "Unexpected error getting available models: {Message}", ex.Message);
+                return GetBuiltInOnnxModels();
+            }
         }
 
-
-        public async Task<ModelInfo?> GetModelInfoAsync(string id)
+        public async Task<AIModelData> GetModelInfoAsync(string id)
         {
-            try
-            {
-                using var context = await _contextFactory.CreateDbContextAsync();
-                return await context.ModelInfos.FindAsync(id);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting model info for {ModelId}", id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var model = await context.AIModels.FindAsync(id);
 
-                // Try to find the model in our built-in list
-                return GetBuiltInOnnxModels().FirstOrDefault(m => m.Id == id);
-            }
+            if (model != null)
+                return model;
+
+            // If not found in database, check built-in models
+            return GetBuiltInOnnxModels().FirstOrDefault(m => m.Id == id);
         }
 
         public async Task RefreshModelCatalogAsync()
         {
-            try
+            if (File.Exists(_modelCachePath))
             {
-                // Clear cache
-                if (File.Exists(_modelCachePath))
-                {
-                    File.Delete(_modelCachePath);
-                }
+                File.Delete(_modelCachePath);
+            }
 
-                // Fetch fresh models
-                var models = await GetAvailableModelsAsync();
-                _logger.LogInformation("Refreshed ONNX model catalog with {Count} models", models.Count());
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error refreshing ONNX model catalog");
-            }
+            // Fetch fresh models
+            var models = await GetAvailableModelsAsync();
+            _logger.LogInformation("Refreshed ONNX model catalog with {Count} models", models.Count());
         }
 
-        private async Task SaveModelsToDbAsync(IEnumerable<ModelInfo> models)
+        private async Task SaveModelsToDbAsync(IEnumerable<AIModelData> models)
         {
-            try
-            {
-                using var context = await _contextFactory.CreateDbContextAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
 
-                // Clear existing models to ensure we have the latest information
-                var existingModels = await context.ModelInfos.ToListAsync();
-                if (existingModels.Any())
+            // Get existing models
+            var existingModels = await context.AIModels.ToListAsync();
+            var existingIds = existingModels.Select(m => m.Id).ToHashSet();
+
+            // Process each model
+            foreach (var model in models)
+            {
+                if (existingIds.Contains(model.Id))
                 {
-                    context.ModelInfos.RemoveRange(existingModels);
-                    await context.SaveChangesAsync();
-                    _logger.LogInformation("Cleared {Count} existing models from database", existingModels.Count);
-                }
+                    // Update existing model (preserving Status and LocalPath)
+                    var existing = existingModels.First(m => m.Id == model.Id);
 
-                // Add all models
-                context.ModelInfos.AddRange(models);
-                await context.SaveChangesAsync();
-                _logger.LogInformation("Added {Count} ONNX models to database", models.Count());
+                    // Update metadata properties
+                    existing.Name = model.Name;
+                    existing.Description = model.Description;
+                    existing.Size = model.Size;
+                    existing.Version = model.Version;
+                    existing.DownloadUrl = model.DownloadUrl;
+                    existing.SupportedTasksJson = model.SupportedTasksJson;
+                    existing.MetadataJson = model.MetadataJson;
+                    existing.Provider = model.Provider;
+                    existing.LastModifiedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    // Add new model
+                    context.AIModels.Add(model);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving ONNX models to database");
-            }
+
+            await context.SaveChangesAsync();
         }
 
-        private bool TryGetCachedModels(out IEnumerable<ModelInfo> models)
+        private bool TryGetCachedModels(out IEnumerable<AIModelData> models)
         {
             models = null;
 
-            try
-            {
-                if (!File.Exists(_modelCachePath))
-                    return false;
-
-                var fileInfo = new FileInfo(_modelCachePath);
-                if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiration)
-                    return false;
-
-                string json = File.ReadAllText(_modelCachePath);
-                models = JsonSerializer.Deserialize<List<ModelInfo>>(json);
-                return models != null && models.Any();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error reading ONNX model cache");
+            if (!File.Exists(_modelCachePath))
                 return false;
-            }
+
+            var fileInfo = new FileInfo(_modelCachePath);
+            if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiration)
+                return false;
+
+            string json = File.ReadAllText(_modelCachePath);
+            models = JsonSerializer.Deserialize<List<AIModelData>>(json);
+            return models != null && models.Any();
         }
 
-        private async Task CacheModelsAsync(IEnumerable<ModelInfo> models)
+        private async Task CacheModelsAsync(IEnumerable<AIModelData> models)
         {
-            try
+            string json = JsonSerializer.Serialize(models, new JsonSerializerOptions
             {
-                string json = JsonSerializer.Serialize(models, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                WriteIndented = true
+            });
 
-                await File.WriteAllTextAsync(_modelCachePath, json);
-                _logger.LogInformation("Cached {Count} ONNX models to {FilePath}", models.Count(), _modelCachePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error caching ONNX models");
-            }
+            await File.WriteAllTextAsync(_modelCachePath, json);
+            _logger.LogInformation("Cached {Count} models to {FilePath}", models.Count(), _modelCachePath);
         }
 
-        private List<ModelInfo> GetBuiltInOnnxModels()
+        private List<AIModelData> GetBuiltInOnnxModels()
         {
-            // Essential ONNX models using reliable download URLs from Microsoft ONNX Model Zoo and ONNX Runtime GitHub
-            return new List<ModelInfo>
+            // Essential ONNX models using reliable download URLs
+            return new List<AIModelData>
             {
-                new ModelInfo
+                new AIModelData
                 {
                     Id = "onnx-bert-base-uncased",
                     Name = "BERT Base Uncased",
@@ -237,9 +227,12 @@ namespace Nexi.Services.AI
                     Version = "1.0",
                     Provider = AIProvider.Local,
                     SupportedTasks = new[] { "text-classification", "token-classification", "question-answering" },
-                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/bert-base-uncased-11.onnx"
+                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/bert-base-uncased-11.onnx",
+                    Status = ModelStatus.NotDownloaded,
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
                 },
-                new ModelInfo
+                new AIModelData
                 {
                     Id = "onnx-distilbert-base-uncased",
                     Name = "DistilBERT Base Uncased",
@@ -248,20 +241,12 @@ namespace Nexi.Services.AI
                     Version = "1.0",
                     Provider = AIProvider.Local,
                     SupportedTasks = new[] { "text-classification", "embeddings" },
-                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/distilbert-base-uncased-11.onnx"
+                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/distilbert-base-uncased-11.onnx",
+                    Status = ModelStatus.NotDownloaded,
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
                 },
-                new ModelInfo
-                {
-                    Id = "onnx-ssd-10",
-                    Name = "SSD Object Detection",
-                    Description = "Single Shot MultiBox Detector for object detection. Detects 80 different object classes in images.",
-                    Size = "78 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "object-detection" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/ssd/model/ssd-10.onnx"
-                },
-                new ModelInfo
+                new AIModelData
                 {
                     Id = "onnx-mobilebert",
                     Name = "MobileBERT",
@@ -270,357 +255,16 @@ namespace Nexi.Services.AI
                     Version = "1.0",
                     Provider = AIProvider.Local,
                     SupportedTasks = new[] { "text-classification", "question-answering" },
-                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/mobilebert.onnx"
+                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/mobilebert.onnx",
+                    Status = ModelStatus.NotDownloaded,
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow
                 },
-                new ModelInfo
-                {
-                    Id = "onnx-squeezenet",
-                    Name = "SqueezeNet",
-                    Description = "Lightweight image classification model that's 50x smaller than AlexNet with similar accuracy.",
-                    Size = "5 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/squeezenet/model/squeezenet1.1-7.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-emotion-ferplus",
-                    Name = "Emotion FERPlus",
-                    Description = "Emotion recognition model that detects 8 emotions from facial expressions.",
-                    Size = "34 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "emotion-recognition" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/body_analysis/emotion_ferplus/model/emotion-ferplus-8.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-tiny-yolo",
-                    Name = "Tiny YOLOv3",
-                    Description = "Smaller version of YOLOv3 for real-time object detection, capable of detecting 80 different object classes.",
-                    Size = "35 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "object-detection" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/tiny-yolov3/model/tiny-yolov3-11.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-resnet50",
-                    Name = "ResNet50",
-                    Description = "Popular 50-layer deep neural network for image classification trained on ImageNet.",
-                    Size = "98 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/resnet/model/resnet50-v1-7.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-efficientnet-lite4",
-                    Name = "EfficientNet-Lite4",
-                    Description = "Lightweight image classification model designed for mobile and edge devices.",
-                    Size = "49 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/efficientnet-lite4/model/efficientnet-lite4-11.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-mobilenet-v2",
-                    Name = "MobileNet v2",
-                    Description = "Lightweight image classification model designed for mobile applications.",
-                    Size = "14 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/mobilenet/model/mobilenetv2-7.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-maskrcnn",
-                    Name = "Mask R-CNN",
-                    Description = "Object detection and instance segmentation model that can identify and segment multiple objects in an image.",
-                    Size = "170 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "instance-segmentation", "object-detection" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/mask-rcnn/model/MaskRCNN-10.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-faster-rcnn",
-                    Name = "Faster R-CNN",
-                    Description = "Fast and accurate object detection model with region proposal network.",
-                    Size = "163 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "object-detection" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/faster-rcnn/model/FasterRCNN-10.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-densenet-121",
-                    Name = "DenseNet-121",
-                    Description = "121-layer deep neural network for image classification with dense connections.",
-                    Size = "31 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/densenet-121/model/densenet-9.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-albert-base",
-                    Name = "ALBERT Base",
-                    Description = "A Lite BERT architecture that uses parameter-reduction techniques for more efficient training and inference.",
-                    Size = "48 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "text-classification", "question-answering" },
-                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/albert-base-v2.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-mnist",
-                    Name = "MNIST Handwritten Digits",
-                    Description = "Simple handwritten digit classification model trained on the MNIST dataset.",
-                    Size = "26 KB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/microsoft/onnxruntime-inference-examples/raw/main/python/notebooks/assets/mnist-8.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-unet",
-                    Name = "U-Net",
-                    Description = "Convolutional neural network for biomedical image segmentation.",
-                    Size = "62 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-segmentation" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/unet/model/unet-9.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-inception-v1",
-                    Name = "Inception v1",
-                    Description = "GoogLeNet Inception v1 model for image classification.",
-                    Size = "28 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/inception_and_googlenet/inception_v1/model/inception-v1-9.onnx"
-                },
-                new ModelInfo
-                {
-                    Id = "onnx-vgg16",
-                    Name = "VGG-16",
-                    Description = "Deep convolutional network for image classification with 16 weight layers.",
-                    Size = "528 MB",
-                    Version = "1.0",
-                    Provider = AIProvider.Local,
-                    SupportedTasks = new[] { "image-classification" },
-                    DownloadUrl = "https://github.com/onnx/models/raw/main/vision/classification/vgg/model/vgg16-7.onnx"
-                }
+                // Add more models as needed
             };
         }
 
-        private async Task FetchModelsWithQuery(string apiUrl, string? token, List<ModelInfo> allModels)
-        {
-            try
-            {
-                bool isAuthenticated = !string.IsNullOrEmpty(token);
-                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-
-                // Add authentication if available
-                if (isAuthenticated)
-                {
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-                }
-
-                // Add user agent
-                request.Headers.Add("User-Agent", "Nexi-App/1.0");
-
-                // Make the request
-                using var response = await _httpClient.SendAsync(request);
-                response.EnsureSuccessStatusCode();
-
-                string jsonResponse = await response.Content.ReadAsStringAsync();
-
-                // Parse the JSON response
-                using var document = System.Text.Json.JsonDocument.Parse(jsonResponse);
-                var existingIds = allModels.Select(m => m.Id).ToHashSet();
-
-                foreach (var element in document.RootElement.EnumerateArray())
-                {
-                    try
-                    {
-                        // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
-                        string originalId = element.GetProperty("id").GetString() ?? "";
-
-                        // Convert to safe ID format (e.g., "microsoft-deepspeed-chat")
-                        string modelId = originalId.Replace("/", "-").ToLowerInvariant();
-
-                        // Skip if we already have this model
-                        if (existingIds.Contains(modelId))
-                        {
-                            continue;
-                        }
-
-                        // Get model name - try modelId property, then use the last part of the ID
-                        string modelName;
-                        if (element.TryGetProperty("modelId", out var modelIdElement) && !string.IsNullOrEmpty(modelIdElement.GetString()))
-                        {
-                            modelName = modelIdElement.GetString() ?? originalId;
-                        }
-                        else
-                        {
-                            // Use the last part of the ID as the name
-                            var parts = originalId.Split('/');
-                            modelName = parts.Length > 1 ? parts[1] : originalId;
-                        }
-
-                        // Format the name nicely - replace dashes with spaces and capitalize words
-                        modelName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
-                            modelName.Replace('-', ' '));
-
-                        // Get model description - sometimes it's in a pipeline_tag property
-                        string description;
-                        if (element.TryGetProperty("description", out var descElement) &&
-                            !string.IsNullOrEmpty(descElement.GetString()))
-                        {
-                            description = descElement.GetString() ?? "ONNX model from HuggingFace";
-
-                            // Truncate description if too long
-                            if (description.Length > 300)
-                            {
-                                description = description.Substring(0, 297) + "...";
-                            }
-                        }
-                        else if (element.TryGetProperty("pipeline_tag", out var pipelineTag) &&
-                                 !string.IsNullOrEmpty(pipelineTag.GetString()))
-                        {
-                            description = $"ONNX model for {pipelineTag.GetString()}";
-                        }
-                        else
-                        {
-                            description = "ONNX model from HuggingFace";
-                        }
-
-                        // Guess model size based on task
-                        string modelSize = "Unknown";
-                        if (originalId.Contains("small") || originalId.Contains("tiny") || originalId.Contains("mini"))
-                        {
-                            modelSize = "Small (~100MB)";
-                        }
-                        else if (originalId.Contains("base") || originalId.Contains("medium"))
-                        {
-                            modelSize = "Medium (~500MB)";
-                        }
-                        else if (originalId.Contains("large") || originalId.Contains("big"))
-                        {
-                            modelSize = "Large (~1GB+)";
-                        }
-
-                        // Notice from the repo structure that ONNX models are often in the /onnx folder
-                        // We'll use the API directly instead of guessing file paths
-                        string downloadUrl = $"https://huggingface.co/api/models/{originalId}/onnx";
-
-                        // Get model info object
-                        var modelInfo = new ModelInfo
-                        {
-                            Id = modelId,
-                            Name = modelName,
-                            Description = description,
-                            Provider = AIProvider.HuggingFace,
-                            DownloadUrl = downloadUrl,
-                            Version = "latest",
-                            Size = modelSize,
-                            CreatedAt = DateTime.UtcNow,
-                            LastModifiedAt = DateTime.UtcNow
-                        };
-
-                        // Extract tags for supported tasks
-                        if (element.TryGetProperty("tags", out var tagsElement))
-                        {
-                            var tasks = new List<string>();
-                            foreach (var tag in tagsElement.EnumerateArray())
-                            {
-                                string tagValue = tag.GetString() ?? "";
-                                if (!string.IsNullOrEmpty(tagValue))
-                                {
-                                    // Clean up and format task names nicely
-                                    tagValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
-                                        tagValue.Replace('-', ' '));
-                                    tasks.Add(tagValue);
-                                }
-                            }
-
-                            // If no tags were found, try pipeline_tag
-                            if (tasks.Count == 0 && element.TryGetProperty("pipeline_tag", out var pipeline))
-                            {
-                                string pipelineValue = pipeline.GetString() ?? "";
-                                if (!string.IsNullOrEmpty(pipelineValue))
-                                {
-                                    pipelineValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
-                                        pipelineValue.Replace('-', ' '));
-                                    tasks.Add(pipelineValue);
-                                }
-                            }
-
-                            // If still no tasks, use a default
-                            if (tasks.Count == 0)
-                            {
-                                tasks.Add("General");
-                            }
-
-                            modelInfo.SupportedTasks = tasks.ToArray();
-                        }
-                        else
-                        {
-                            modelInfo.SupportedTasks = new[] { "General" };
-                        }
-
-                        // Add metadata
-                        var metadata = new Dictionary<string, string>
-                        {
-                            ["RequiresAuth"] = isAuthenticated ? "true" : "false",
-                            ["Source"] = "HuggingFace",
-                            ["OriginalId"] = originalId  // Store the original HuggingFace ID
-                        };
-
-                        // Store download stats if available
-                        if (element.TryGetProperty("downloads", out var downloads))
-                        {
-                            metadata["Downloads"] = downloads.GetInt32().ToString();
-                        }
-
-                        modelInfo.Metadata = metadata;
-
-                        // Add to collection
-                        allModels.Add(modelInfo);
-                        existingIds.Add(modelId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error parsing model entry from HuggingFace API");
-                        // Continue with next model
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching models with query: {Query}", apiUrl);
-                // Just log the error and continue - we'll return whatever models we managed to get
-            }
-        }
-
-
-        private async Task<IEnumerable<ModelInfo>> FetchOnnxModelsFromHuggingFaceAsync()
+        private async Task<IEnumerable<AIModelData>> FetchOnnxModelsFromHuggingFaceAsync()
         {
             try
             {
@@ -628,23 +272,16 @@ namespace Nexi.Services.AI
 
                 // Check if we have a token for authenticated requests
                 var authService = _serviceProvider.GetService(typeof(IAuthenticationService)) as IAuthenticationService;
-                string? token = null;
+                string token = null;
                 bool isAuthenticated = false;
 
                 if (authService != null)
                 {
-                    try
-                    {
-                        token = await authService.GetTokenAsync("HuggingFace");
-                        isAuthenticated = !string.IsNullOrEmpty(token);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to get HuggingFace token, continuing with unauthenticated requests");
-                    }
+                    token = await authService.GetTokenAsync("HuggingFace");
+                    isAuthenticated = !string.IsNullOrEmpty(token);
                 }
 
-                var models = new List<ModelInfo>();
+                var models = new List<AIModelData>();
 
                 // Get popular models first - specifically filtering for ONNX models
                 await FetchModelsWithQuery("https://huggingface.co/api/models?limit=250&sort=downloads&filter=onnx", token, models);
@@ -655,11 +292,232 @@ namespace Nexi.Services.AI
                 _logger.LogInformation("Retrieved {Count} ONNX models from HuggingFace", models.Count);
                 return models;
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Error fetching models from HuggingFace API");
-                return new List<ModelInfo>();
+                _logger.LogError(ex, "HTTP error fetching models from HuggingFace API: {Message}", ex.Message);
+                throw;
             }
+            catch (Exception ex) when (ex is not HttpRequestException)
+            {
+                _logger.LogError(ex, "Unexpected error fetching models from HuggingFace API: {Message}", ex.Message);
+                throw;
+            }
+        }
+
+        private async Task FetchModelsWithQuery(string apiUrl, string token, List<AIModelData> allModels)
+        {
+            bool isAuthenticated = !string.IsNullOrEmpty(token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+
+            // Add authentication if available
+            if (isAuthenticated)
+            {
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+
+            // Add user agent
+            request.Headers.Add("User-Agent", "Nexi-App/1.0");
+
+            using var response = await _httpClient.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch models from {Url}: {StatusCode}", apiUrl, response.StatusCode);
+                return;
+            }
+
+            string jsonResponse = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(jsonResponse);
+            var existingIds = allModels.Select(m => m.Id).ToHashSet();
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
+                if (!element.TryGetProperty("id", out var idElement))
+                    continue;
+
+                string originalId = idElement.GetString() ?? "";
+                string modelId = originalId.Replace("/", "-").ToLowerInvariant();
+
+                // Skip if we already have this model
+                if (existingIds.Contains(modelId))
+                    continue;
+
+                // Build model data
+                var model = CreateModelFromApiElement(element, originalId, modelId, isAuthenticated);
+                allModels.Add(model);
+                existingIds.Add(modelId);
+            }
+        }
+
+        private AIModelData CreateModelFromApiElement(JsonElement element, string originalId, string modelId, bool isAuthenticated)
+        {
+            // Get model name
+            string modelName;
+            if (element.TryGetProperty("modelId", out var modelIdElement) && !string.IsNullOrEmpty(modelIdElement.GetString()))
+            {
+                modelName = modelIdElement.GetString() ?? originalId;
+            }
+            else
+            {
+                // Use the last part of the ID as the name
+                var parts = originalId.Split('/');
+                modelName = parts.Length > 1 ? parts[1] : originalId;
+            }
+
+            // Format the name nicely - replace dashes with spaces and capitalize words
+            modelName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                modelName.Replace('-', ' '));
+
+            // Get model description
+            string description;
+            if (element.TryGetProperty("description", out var descElement) &&
+                !string.IsNullOrEmpty(descElement.GetString()))
+            {
+                description = descElement.GetString() ?? "ONNX model from HuggingFace";
+
+                // Truncate description if too long
+                if (description.Length > 300)
+                {
+                    description = description.Substring(0, 297) + "...";
+                }
+            }
+            else if (element.TryGetProperty("pipeline_tag", out var pipelineTag) &&
+                     !string.IsNullOrEmpty(pipelineTag.GetString()))
+            {
+                description = $"ONNX model for {pipelineTag.GetString()}";
+            }
+            else
+            {
+                description = "ONNX model from HuggingFace";
+            }
+
+            // Guess model size based on task
+            string modelSize = "Unknown";
+            if (originalId.Contains("small") || originalId.Contains("tiny") || originalId.Contains("mini"))
+            {
+                modelSize = "Small (~100MB)";
+            }
+            else if (originalId.Contains("base") || originalId.Contains("medium"))
+            {
+                modelSize = "Medium (~500MB)";
+            }
+            else if (originalId.Contains("large") || originalId.Contains("big"))
+            {
+                modelSize = "Large (~1GB+)";
+            }
+
+            // Notice from the repo structure that ONNX models are often in the /onnx folder
+            string downloadUrl = $"https://huggingface.co/api/models/{originalId}/onnx";
+
+            // Create model object
+            var model = new AIModelData
+            {
+                Id = modelId,
+                Name = modelName,
+                Description = description,
+                Provider = AIProvider.HuggingFace,
+                DownloadUrl = downloadUrl,
+                Version = "latest",
+                Size = modelSize,
+                Status = ModelStatus.NotDownloaded,
+                CreatedAt = DateTime.UtcNow,
+                LastModifiedAt = DateTime.UtcNow
+            };
+
+            // Extract tags for supported tasks
+            if (element.TryGetProperty("tags", out var tagsElement))
+            {
+                var tasks = new List<string>();
+                foreach (var tag in tagsElement.EnumerateArray())
+                {
+                    string tagValue = tag.GetString() ?? "";
+                    if (!string.IsNullOrEmpty(tagValue))
+                    {
+                        // Clean up and format task names nicely
+                        tagValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                            tagValue.Replace('-', ' '));
+                        tasks.Add(tagValue);
+                    }
+                }
+
+                // If no tags were found, try pipeline_tag
+                if (tasks.Count == 0 && element.TryGetProperty("pipeline_tag", out var pipeline))
+                {
+                    string pipelineValue = pipeline.GetString() ?? "";
+                    if (!string.IsNullOrEmpty(pipelineValue))
+                    {
+                        pipelineValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                            pipelineValue.Replace('-', ' '));
+                        tasks.Add(pipelineValue);
+                    }
+                }
+
+                // If still no tasks, use a default
+                if (tasks.Count == 0)
+                {
+                    tasks.Add("General");
+                }
+
+                model.SupportedTasks = tasks.ToArray();
+            }
+            else
+            {
+                model.SupportedTasks = new[] { "General" };
+            }
+
+            // Add metadata
+            model.Metadata = new Dictionary<string, string>
+            {
+                ["RequiresAuth"] = isAuthenticated ? "true" : "false",
+                ["Source"] = "HuggingFace",
+                ["OriginalId"] = originalId  // Store the original HuggingFace ID
+            };
+
+            // Store download stats if available
+            if (element.TryGetProperty("downloads", out var downloads))
+            {
+                model.Metadata["Downloads"] = downloads.GetInt32().ToString();
+            }
+
+            return model;
+        }
+
+        public async Task<byte[]> DownloadModelWithAuthAsync(
+            string modelUrl,
+            string provider,
+            string modelName,
+            IAuthenticationService authService,
+            ILogger logger)
+        {
+            // Get the token - this will trigger the auth dialog if needed
+            var token = await authService.RequestAuthenticationAsync(provider, modelName);
+
+            // If we get here, we have a token
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            httpClient.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("Nexi", "1.0"));
+            httpClient.Timeout = TimeSpan.FromMinutes(30); // Long timeout for large downloads
+
+            var response = await httpClient.GetAsync(modelUrl);
+
+            // Handle specific authorization errors
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // Clear the token as it might be invalid
+                await authService.ClearTokenAsync(provider);
+
+                // Throw a more specific exception
+                throw new UnauthorizedAccessException(
+                    "The provided token was rejected. Please check your credentials and try again.");
+            }
+
+            // Ensure we got a success response
+            response.EnsureSuccessStatusCode();
+
+            // Return the file bytes
+            return await response.Content.ReadAsByteArrayAsync();
         }
     }
 }

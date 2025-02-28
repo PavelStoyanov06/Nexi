@@ -1,4 +1,5 @@
-﻿using Nexi.Data.Models;
+﻿// IAIModelService.cs
+using Nexi.Data.Models;
 
 namespace Nexi.Services.Interfaces
 {
@@ -13,11 +14,6 @@ namespace Nexi.Services.Interfaces
         /// Get a specific AI model by ID
         /// </summary>
         Task<AIModelData?> GetModelAsync(string id);
-
-        /// <summary>
-        /// Get detailed model information including download URL
-        /// </summary>
-        Task<ModelInfo?> GetModelInfoAsync(string id);
 
         /// <summary>
         /// Update model status (Downloaded, Downloading, Error)

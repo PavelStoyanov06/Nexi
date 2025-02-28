@@ -1,4 +1,6 @@
-﻿using Nexi.Data.Models;
+﻿using Interfaces;
+using Microsoft.Extensions.Logging;
+using Nexi.Data.Models;
 
 namespace Nexi.Services.Interfaces
 {
@@ -7,16 +9,26 @@ namespace Nexi.Services.Interfaces
         /// <summary>
         /// Get all available models from the repository
         /// </summary>
-        Task<IEnumerable<ModelInfo>> GetAvailableModelsAsync();
+        Task<IEnumerable<AIModelData>> GetAvailableModelsAsync();
 
         /// <summary>
         /// Get detailed model information for a specific model
         /// </summary>
-        Task<ModelInfo?> GetModelInfoAsync(string id);
+        Task<AIModelData> GetModelInfoAsync(string id);
 
         /// <summary>
         /// Refresh the model catalog from the remote source
         /// </summary>
         Task RefreshModelCatalogAsync();
+
+        /// <summary>
+        /// Downloads a model that requires authentication using the appropriate token
+        /// </summary>
+        Task<byte[]> DownloadModelWithAuthAsync(
+            string modelUrl,
+            string provider,
+            string modelName,
+            IAuthenticationService authService,
+            ILogger logger);
     }
 }

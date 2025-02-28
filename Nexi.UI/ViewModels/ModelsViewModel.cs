@@ -13,126 +13,6 @@ using System.Windows.Input;
 
 namespace Nexi.UI.ViewModels
 {
-    public class ModelItemViewModel : ViewModelBase
-    {
-        private string _id;
-        private string _name;
-        private string _description;
-        private string _size;
-        private string _version;
-        private ModelStatus _status;
-        private double _downloadProgress;
-        private bool _isDownloading;
-        private string _category;
-        private string _backgroundColor;
-        private string _statusText;
-        private string[] _supportedTasks;
-        private string _downloadUrl;
-
-        public string Id
-        {
-            get => _id;
-            set => this.RaiseAndSetIfChanged(ref _id, value);
-        }
-
-        public string Name
-        {
-            get => _name;
-            set => this.RaiseAndSetIfChanged(ref _name, value);
-        }
-
-        public string Description
-        {
-            get => _description;
-            set => this.RaiseAndSetIfChanged(ref _description, value);
-        }
-
-        public string Size
-        {
-            get => _size;
-            set => this.RaiseAndSetIfChanged(ref _size, value);
-        }
-
-        public string Version
-        {
-            get => _version;
-            set => this.RaiseAndSetIfChanged(ref _version, value);
-        }
-
-        public ModelStatus Status
-        {
-            get => _status;
-            set => this.RaiseAndSetIfChanged(ref _status, value);
-        }
-
-        public double DownloadProgress
-        {
-            get => _downloadProgress;
-            set => this.RaiseAndSetIfChanged(ref _downloadProgress, value);
-        }
-
-        public bool IsDownloading
-        {
-            get => _isDownloading;
-            set => this.RaiseAndSetIfChanged(ref _isDownloading, value);
-        }
-
-        public string Category
-        {
-            get => _category;
-            set => this.RaiseAndSetIfChanged(ref _category, value);
-        }
-
-        public string BackgroundColor
-        {
-            get => _backgroundColor;
-            set => this.RaiseAndSetIfChanged(ref _backgroundColor, value);
-        }
-
-        public string StatusText
-        {
-            get => _statusText;
-            set => this.RaiseAndSetIfChanged(ref _statusText, value);
-        }
-
-        public string[] SupportedTasks
-        {
-            get => _supportedTasks;
-            set => this.RaiseAndSetIfChanged(ref _supportedTasks, value);
-        }
-
-        public string DownloadUrl
-        {
-            get => _downloadUrl;
-            set => this.RaiseAndSetIfChanged(ref _downloadUrl, value);
-        }
-
-        public string TasksDisplay => SupportedTasks != null ? string.Join(", ", SupportedTasks) : string.Empty;
-
-        public ModelItemViewModel(ModelInfo modelInfo, AIModelData? aiModelData)
-        {
-            Id = modelInfo.Id;
-            Name = modelInfo.Name;
-            Description = modelInfo.Description;
-            Size = modelInfo.Size;
-            Version = modelInfo.Version;
-            Status = aiModelData?.Status ?? ModelStatus.NotDownloaded;
-            DownloadProgress = 0;
-            IsDownloading = Status == ModelStatus.Downloading;
-            SupportedTasks = modelInfo.SupportedTasks;
-            DownloadUrl = modelInfo.DownloadUrl;
-            Category = "Unknown"; // Will be set by the view model
-            BackgroundColor = "#607D8B"; // Default color
-            StatusText = Status.ToString();
-        }
-
-        // Creates a ModelItemViewModel by combining ModelInfo and AIModelData
-        public static ModelItemViewModel Create(ModelInfo modelInfo, AIModelData? aiModelData)
-        {
-            return new ModelItemViewModel(modelInfo, aiModelData);
-        }
-    }
-
     public class ModelsViewModel : ViewModelBase
     {
         private readonly IAIModelService _aiModelService;
@@ -286,19 +166,27 @@ namespace Nexi.UI.ViewModels
                 IsLoading = true;
                 StatusMessage = "Loading models...";
 
-                // Get model info from repository
-                var modelInfos = await _modelRepository.GetAvailableModelsAsync();
+                // Get available models from repository
+                var models = await _modelRepository.GetAvailableModelsAsync();
 
                 // Get model data from database
-                var aiModels = await _aiModelService.GetAllModelsAsync();
+                var dbModels = await _aiModelService.GetAllModelsAsync();
 
                 // Merge the data
                 var viewModels = new ObservableCollection<ModelItemViewModel>();
 
-                foreach (var modelInfo in modelInfos)
+                foreach (var model in models)
                 {
-                    var aiModel = aiModels.FirstOrDefault(m => m.Id == modelInfo.Id);
-                    var viewModel = ModelItemViewModel.Create(modelInfo, aiModel);
+                    // Update with database information if available
+                    var dbModel = dbModels.FirstOrDefault(m => m.Id == model.Id);
+                    if (dbModel != null)
+                    {
+                        model.Status = dbModel.Status;
+                        model.LocalPath = dbModel.LocalPath;
+                        model.DownloadedDate = dbModel.DownloadedDate;
+                    }
+
+                    var viewModel = ModelItemViewModel.Create(model);
 
                     // Add category tag based on model size or specialization
                     viewModel.Category = GetModelCategory(viewModel);
@@ -317,7 +205,7 @@ namespace Nexi.UI.ViewModels
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error refreshing models");
+                _logger.LogError(ex, "Error refreshing models: {Message}", ex.Message);
                 StatusMessage = $"Error loading models: {ex.Message}";
             }
             finally
@@ -325,6 +213,8 @@ namespace Nexi.UI.ViewModels
                 IsLoading = false;
             }
         }
+
+
 
         private async Task DownloadModelAsync(string modelId)
         {
