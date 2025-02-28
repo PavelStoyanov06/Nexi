@@ -294,15 +294,125 @@ namespace Nexi.Services.AI
             };
         }
 
+        private string GetNameFromApiElement(JsonElement element, string originalId)
+        {
+            // Get model name from API or format from ID
+            if (element.TryGetProperty("modelId", out var modelIdElement) &&
+                !string.IsNullOrEmpty(modelIdElement.GetString()))
+            {
+                return modelIdElement.GetString() ?? originalId;
+            }
+            else
+            {
+                // Use the last part of the ID as the name
+                var parts = originalId.Split('/');
+                var name = parts.Length > 1 ? parts[1] : originalId;
+
+                // Format the name nicely - replace dashes with spaces and capitalize words
+                return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                    name.Replace('-', ' '));
+            }
+        }
+
+        private string GetDescriptionFromApiElement(JsonElement element, string tag)
+        {
+            // Get model description or create a default one
+            if (element.TryGetProperty("description", out var descElement) &&
+                !string.IsNullOrEmpty(descElement.GetString()))
+            {
+                string description = descElement.GetString() ??
+                    $"AI model for {tag} tasks from HuggingFace";
+
+                // Truncate description if too long
+                if (description.Length > 300)
+                {
+                    description = description.Substring(0, 297) + "...";
+                }
+                return description;
+            }
+            else if (element.TryGetProperty("pipeline_tag", out var pipelineTag) &&
+                     !string.IsNullOrEmpty(pipelineTag.GetString()))
+            {
+                return $"AI model for {pipelineTag.GetString()} tasks";
+            }
+            else
+            {
+                return $"AI model for {tag} tasks from HuggingFace";
+            }
+        }
+
+        private string[] GetTasksFromApiElement(JsonElement element, string tag)
+        {
+            var tasks = new List<string>();
+
+            // Try to get tasks from tags property
+            if (element.TryGetProperty("tags", out var tagsElement))
+            {
+                foreach (var tagElem in tagsElement.EnumerateArray())
+                {
+                    string tagValue = tagElem.GetString() ?? "";
+                    if (!string.IsNullOrEmpty(tagValue))
+                    {
+                        // Clean up and format task names nicely
+                        tagValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                            tagValue.Replace('-', ' '));
+                        tasks.Add(tagValue);
+                    }
+                }
+            }
+
+            // If no tags were found, try pipeline_tag
+            if (tasks.Count == 0 && element.TryGetProperty("pipeline_tag", out var pipeline))
+            {
+                string pipelineValue = pipeline.GetString() ?? "";
+                if (!string.IsNullOrEmpty(pipelineValue))
+                {
+                    pipelineValue = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                        pipelineValue.Replace('-', ' '));
+                    tasks.Add(pipelineValue);
+                }
+            }
+
+            // If still no tasks, use the search tag
+            if (tasks.Count == 0)
+            {
+                var formattedTag = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(
+                    tag.Replace('-', ' '));
+                tasks.Add(formattedTag);
+            }
+
+            return tasks.ToArray();
+        }
+
+        private string GuessSizeFromId(string modelId)
+        {
+            // Guess model size based on task and name
+            if (modelId.Contains("small") || modelId.Contains("tiny") || modelId.Contains("mini"))
+            {
+                return "Small (~100MB)";
+            }
+            else if (modelId.Contains("base") || modelId.Contains("medium"))
+            {
+                return "Medium (~500MB)";
+            }
+            else if (modelId.Contains("large") || modelId.Contains("big"))
+            {
+                return "Large (~1GB+)";
+            }
+            else
+            {
+                return "Unknown";
+            }
+        }
+
         private async Task<IEnumerable<AIModelData>> FetchOnnxModelsFromHuggingFaceAsync(
-    int limit = 100,
-    int offset = 0,
-    CancellationToken cancellationToken = default)
+            int limit = 500, // Increased from 100
+            int offset = 0,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                _logger.LogInformation("Fetching models from HuggingFace API (limit: {Limit}, offset: {Offset})",
-                    limit, offset);
+                _logger.LogInformation("Fetching models from HuggingFace API with increased limit: {Limit}", limit);
 
                 // Check if we have a token for authenticated requests
                 var authService = _serviceProvider.GetService(typeof(IAuthenticationService)) as IAuthenticationService;
@@ -316,13 +426,55 @@ namespace Nexi.Services.AI
                 }
 
                 var models = new List<AIModelData>();
+                var uniqueIds = new HashSet<string>();
 
-                // Get models with paging
-                string apiUrl = $"https://huggingface.co/api/models?limit={limit}&offset={offset}&filter=onnx";
+                // Define multiple tags to search for more models
+                string[] tags = {
+                    "onnx",
+                    "text-generation",
+                    "sentence-transformers",
+                    "embedding",
+                    "text-classification",
+                    "text-to-image",
+                    "translation",
+                    "summarization",
+                    "question-answering",
+                    "fill-mask",
+                    "feature-extraction",
+                    "token-classification",
+                    "table-question-answering",
+                    "zero-shot-classification"
+                };
 
-                await FetchModelsWithQuery(apiUrl, token, models, cancellationToken);
+                // Fetch models for each tag in parallel
+                var tasks = new List<Task>();
 
-                _logger.LogInformation("Retrieved {Count} ONNX models from HuggingFace", models.Count);
+                foreach (string tag in tags)
+                {
+                    for (int pageOffset = 0; pageOffset < 3; pageOffset++) // Fetch 3 pages for each tag
+                    {
+                        int currentOffset = offset + (pageOffset * limit);
+                        string apiUrl = $"https://huggingface.co/api/models?limit={limit}&offset={currentOffset}&filter={tag}";
+
+                        // Use Task.Run to not block on each query
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            await FetchModelsWithQuery(apiUrl, token, models, uniqueIds, tag, cancellationToken);
+                        }, cancellationToken));
+                    }
+                }
+
+                // Also fetch general models without a specific tag
+                string generalUrl = $"https://huggingface.co/api/models?limit={limit}&offset={offset}";
+                tasks.Add(Task.Run(async () =>
+                {
+                    await FetchModelsWithQuery(generalUrl, token, models, uniqueIds, "general", cancellationToken);
+                }, cancellationToken));
+
+                // Wait for all tasks to complete
+                await Task.WhenAll(tasks);
+
+                _logger.LogInformation("Retrieved {Count} unique models from HuggingFace", models.Count);
                 return models;
             }
             catch (OperationCanceledException)
@@ -339,10 +491,12 @@ namespace Nexi.Services.AI
 
 
         private async Task FetchModelsWithQuery(
-            string apiUrl,
-            string token,
-            List<AIModelData> allModels,
-            CancellationToken cancellationToken = default)
+    string apiUrl,
+    string token,
+    List<AIModelData> allModels,
+    HashSet<string> uniqueIds,
+    string tag = "onnx",
+    CancellationToken cancellationToken = default)
         {
             bool isAuthenticated = !string.IsNullOrEmpty(token);
             using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
@@ -356,44 +510,104 @@ namespace Nexi.Services.AI
             // Add user agent
             request.Headers.Add("User-Agent", "Nexi-App/1.0");
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                _logger.LogWarning("Failed to fetch models from {Url}: {StatusCode}", apiUrl, response.StatusCode);
-                return;
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to fetch models from {Url}: {StatusCode}", apiUrl, response.StatusCode);
+                    return;
+                }
+
+                string jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var document = JsonDocument.Parse(jsonResponse);
+
+                var newModels = new List<AIModelData>();
+
+                foreach (var element in document.RootElement.EnumerateArray())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
+                    if (!element.TryGetProperty("id", out var idElement))
+                        continue;
+
+                    string originalId = idElement.GetString() ?? "";
+                    string modelId = originalId.Replace("/", "-").ToLowerInvariant();
+
+                    // Check in local list first to avoid lock contention
+                    if (newModels.Any(m => m.Id == modelId))
+                        continue;
+
+                    // Create model with enhanced metadata
+                    var model = new AIModelData
+                    {
+                        Id = modelId,
+                        Name = GetNameFromApiElement(element, originalId),
+                        Description = GetDescriptionFromApiElement(element, tag),
+                        Provider = AIProvider.HuggingFace,
+                        DownloadUrl = $"https://huggingface.co/{originalId}/resolve/main/model.onnx",
+                        Version = "latest",
+                        Size = GuessSizeFromId(originalId),
+                        Status = ModelStatus.NotDownloaded,
+                        CreatedAt = DateTime.UtcNow,
+                        LastModifiedAt = DateTime.UtcNow,
+                        SupportedTasks = GetTasksFromApiElement(element, tag),
+                        // Add metadata for better path resolution
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["RequiresAuth"] = "true",
+                            ["Source"] = "HuggingFace",
+                            ["OriginalId"] = originalId,
+                            ["PotentialPath0"] = "/resolve/main/model.onnx",
+                            ["PotentialPath1"] = "/resolve/main/onnx/model.onnx",
+                            ["PotentialPath2"] = "/resolve/main/inference/model.onnx",
+                            ["PotentialPath3"] = "/resolve/main/models/model.onnx",
+                            ["SearchTag"] = tag
+                        }
+                    };
+
+                    // Add download stats if available
+                    if (element.TryGetProperty("downloads", out var downloads))
+                    {
+                        model.Metadata["Downloads"] = downloads.GetInt32().ToString();
+                    }
+
+                    newModels.Add(model);
+                }
+
+                // Now add to the shared collection with a lock for thread safety
+                lock (allModels)
+                {
+                    foreach (var model in newModels)
+                    {
+                        if (!uniqueIds.Contains(model.Id))
+                        {
+                            uniqueIds.Add(model.Id);
+                            allModels.Add(model);
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Added {Count} models from {Url}", newModels.Count, apiUrl);
             }
-
-            string jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var document = JsonDocument.Parse(jsonResponse);
-            var existingIds = allModels.Select(m => m.Id).ToHashSet();
-
-            foreach (var element in document.RootElement.EnumerateArray())
+            catch (HttpRequestException ex)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // Get the original HuggingFace ID (e.g., "microsoft/DeepSpeed-Chat")
-                if (!element.TryGetProperty("id", out var idElement))
-                    continue;
-
-                string originalId = idElement.GetString() ?? "";
-                string modelId = originalId.Replace("/", "-").ToLowerInvariant();
-
-                // Skip if we already have this model
-                if (existingIds.Contains(modelId))
-                    continue;
-
-                // Build model data
-                var model = CreateModelFromApiElement(element, originalId, modelId, isAuthenticated);
-                allModels.Add(model);
-                existingIds.Add(modelId);
+                _logger.LogWarning("HTTP error fetching from {Url}: {Message}", apiUrl, ex.Message);
+                // Continue with other queries
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning("JSON parsing error from {Url}: {Message}", apiUrl, ex.Message);
+                // Continue with other queries
             }
         }
 
         public async Task<IEnumerable<AIModelData>> GetModelsPageAsync(
-    int page,
-    int pageSize,
-    CancellationToken cancellationToken = default)
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default)
         {
             try
             {

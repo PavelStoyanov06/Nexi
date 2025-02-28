@@ -1,10 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
-using System.Speech.Recognition;
 using Nexi.Services.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Speech.Recognition;
 
 namespace Nexi.Services
 {
@@ -34,7 +30,6 @@ namespace Nexi.Services
         {
             try
             {
-                // In a real implementation, you would use NAudio or another library to get actual devices
                 // For simplicity, we'll return hardcoded values
                 return new List<string> {
                     "Default",
