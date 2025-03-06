@@ -49,34 +49,13 @@ namespace Nexi.Data.Context
             modelBuilder.Entity<AIModelData>().HasData(
                 new AIModelData
                 {
-                    Id = "llama-7b",
-                    Name = "LLaMA 7B",
-                    Description = "A foundational large language model with 7 billion parameters.",
+                    Id = "llama-3.2-1b-instruct",
+                    Name = "Llama 3.2 1B Instruct",
+                    Description = "Llama 3.2 1B Instruct ONNX model for efficient inference",
                     Status = ModelStatus.NotDownloaded,
-                    Size = "13.5 GB",
-                    Version = "2.0.0",
-                    CreatedAt = seedDate,
-                    LastModifiedAt = seedDate
-                },
-                new AIModelData
-                {
-                    Id = "mistral-7b",
-                    Name = "Mistral 7B",
-                    Description = "High-performance language model optimized for efficiency.",
-                    Status = ModelStatus.NotDownloaded,
-                    Size = "13.8 GB",
+                    Size = "1.2 GB",
                     Version = "1.0.0",
-                    CreatedAt = seedDate,
-                    LastModifiedAt = seedDate
-                },
-                new AIModelData
-                {
-                    Id = "llama-13b",
-                    Name = "LLaMA 13B",
-                    Description = "Enhanced version of LLaMA with 13 billion parameters.",
-                    Status = ModelStatus.NotDownloaded,
-                    Size = "24.1 GB",
-                    Version = "2.0.0",
+                    RepositoryId = "onnx-community/Llama-3.2-1B-Instruct-ONNX",
                     CreatedAt = seedDate,
                     LastModifiedAt = seedDate
                 }

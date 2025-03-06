@@ -7,5 +7,6 @@ namespace Nexi.UI.Models
         public required string Content { get; set; }
         public DateTime Timestamp { get; set; }
         public bool IsUser { get; set; }
+        public bool IsSystemMessage { get; set; }
     }
 }

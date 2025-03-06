@@ -17,6 +17,10 @@ namespace Nexi.Data.Models
 
         public bool UseGPU { get; set; } = false;
 
+        // LlamaSharp Settings
+        public int ContextSize { get; set; } = 1024;
+        public int GpuLayerCount { get; set; } = 5;
+
         // Voice Settings
         [MaxLength(100)]
         public string? SelectedInputDevice { get; set; }

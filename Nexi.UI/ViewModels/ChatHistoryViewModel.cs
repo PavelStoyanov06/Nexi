@@ -118,10 +118,18 @@ namespace Nexi.UI.ViewModels
                 var session = await _storageService.GetSessionAsync(chatId);
                 if (session != null)
                 {
+                    // Get the AIModelService from the service provider
+                    var aiModelService = ((App)App.Current).Services.GetRequiredService<IAIModelService>();
+                    var userSettingsService = ((App)App.Current).Services.GetRequiredService<IUserSettingsService>();
+                    var llamaSharpService = ((App)App.Current).Services.GetRequiredService<ILlamaSharpService>();
+                    
                     var chatViewModel = new ChatViewModel(
                         _commandProcessor,
                         _voiceService,
                         _storageService,
+                        aiModelService,
+                        userSettingsService,
+                        llamaSharpService,
                         _chatViewModelLogger,
                         chatId);
 

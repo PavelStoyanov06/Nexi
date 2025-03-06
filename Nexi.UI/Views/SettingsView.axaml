@@ -44,22 +44,57 @@
                                    Width="24"
                                    Height="24"
                                    Foreground="{DynamicResource SystemAccentColor}"/>
-              <TextBlock Text="AI Model Settings"
+              <TextBlock Text="{CompiledBinding SelectedModel.Name, StringFormat='{}{0} Model Settings', FallbackValue='AI Model Settings'}"
                        FontSize="20"
                        FontWeight="SemiBold"/>
             </StackPanel>
 
             <StackPanel Spacing="16">
-              <ComboBox SelectedIndex="{CompiledBinding SelectedModelIndex}"
+              <ComboBox SelectedItem="{CompiledBinding SelectedModel}"
                       Width="300"
+                      ItemsSource="{CompiledBinding AvailableModels}"
                       HorizontalAlignment="Left">
-                <ComboBoxItem>LLaMA 7B</ComboBoxItem>
-                <ComboBoxItem>Mistral 7B</ComboBoxItem>
-                <ComboBoxItem>LLaMA 13B</ComboBoxItem>
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{CompiledBinding Name}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
               </ComboBox>
 
-              <CheckBox Content="Use GPU Acceleration"
+              <CheckBox Content="Use GPU Acceleration (if available)"
                       IsChecked="{CompiledBinding UseGPU}"/>
+                      
+              <StackPanel Spacing="8">
+                <TextBlock Text="Context Size (tokens)"
+                         Opacity="0.7"/>
+                <NumericUpDown Value="{CompiledBinding ContextSize}"
+                             Minimum="512"
+                             Maximum="8192"
+                             Increment="512"
+                             Width="300"
+                             HorizontalAlignment="Left"/>
+                <TextBlock Text="Larger context allows for longer conversations but uses more memory"
+                         Opacity="0.6"
+                         FontSize="12"/>
+              </StackPanel>
+              
+              <StackPanel Spacing="8">
+                <TextBlock Text="GPU Layer Count"
+                         Opacity="0.7"/>
+                <NumericUpDown Value="{CompiledBinding GpuLayerCount}"
+                             Minimum="0"
+                             Maximum="32"
+                             Increment="1"
+                             Width="300"
+                             HorizontalAlignment="Left"/>
+                <TextBlock Text="How many layers to offload to GPU (0 for CPU only, higher values use more GPU memory)"
+                         Opacity="0.6"
+                         FontSize="12"/>
+              </StackPanel>
+                      
+              <TextBlock Text="Note: The Llama 3.2 1B Instruct model must be downloaded from the Models page before it can be used."
+                       Opacity="0.7"
+                       TextWrapping="Wrap"/>
             </StackPanel>
           </StackPanel>
         </Border>

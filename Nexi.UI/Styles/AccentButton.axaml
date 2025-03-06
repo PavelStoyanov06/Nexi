@@ -1,0 +1,34 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Design.PreviewWith>
+    <Border Padding="20">
+      <StackPanel Spacing="10">
+        <Button Classes="AccentButton" Content="Accent Button" />
+      </StackPanel>
+    </Border>
+  </Design.PreviewWith>
+
+  <Style Selector="Button.AccentButton">
+    <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+
+  <Style Selector="Button.AccentButton:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorDark1}" />
+  </Style>
+
+  <Style Selector="Button.AccentButton:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorDark2}" />
+  </Style>
+
+  <Style Selector="Button.AccentButton:disabled /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseLowColor}" />
+    <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}" />
+  </Style>
+</Styles> 

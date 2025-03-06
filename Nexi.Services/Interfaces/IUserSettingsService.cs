@@ -7,9 +7,10 @@ namespace Nexi.Services.Interfaces
         Task<UserSettings> GetSettingsAsync();
         Task<UserSettings> UpdateSettingsAsync(UserSettings settings);
         Task<UserSettings> UpdateThemeAsync(ThemeMode theme);
-        Task<UserSettings> UpdateSelectedModelAsync(string modelId);
+        Task<UserSettings> UpdateSelectedModelAsync(string? modelId);
         Task<UserSettings> UpdateUseGPUAsync(bool useGPU);
         Task<UserSettings> UpdateVoiceSettingsAsync(string? inputDevice, int sensitivity);
         Task<UserSettings> UpdateAccentColorAsync(bool useSystem, string? color = null);
+        Task<UserSettings> UpdateLlamaSharpSettingsAsync(int contextSize, int gpuLayerCount);
     }
 }

@@ -19,6 +19,7 @@ namespace Nexi.UI.ViewModels
         private readonly ILogger<SettingsViewModel> _logger;
 
         private int _selectedModelIndex;
+        private AIModelData? _selectedModel;
         private bool _useGPU;
         private int _selectedInputDeviceIndex;
         private double _inputSensitivity = 50;
@@ -27,6 +28,8 @@ namespace Nexi.UI.ViewModels
         private string? _selectedModelId;
         private ObservableCollection<AIModelData> _availableModels;
         private bool _isLoading = false;
+        private int _contextSize = 1024;
+        private int _gpuLayerCount = 5;
 
         public SettingsViewModel(
             IUserSettingsService userSettingsService,
@@ -42,32 +45,81 @@ namespace Nexi.UI.ViewModels
             // Initialize commands
             SaveSettingsCommand = ReactiveCommand.CreateFromTask(SaveSettingsAsync);
 
-            // Subscribe to property changes
+            // Subscribe to property changes with debounce to avoid concurrent operations
             this.WhenAnyValue(x => x.SelectedTheme)
                 .Skip(1) // Skip initial value
+                .Throttle(TimeSpan.FromMilliseconds(300)) // Add debounce
+                .ObserveOn(RxApp.MainThreadScheduler) // Ensure we're on the UI thread
                 .Subscribe(async theme => {
                     UpdateTheme(theme);
-                    await _userSettingsService.UpdateThemeAsync(theme);
+                    try {
+                        await _userSettingsService.UpdateThemeAsync(theme);
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating theme");
+                    }
                 });
 
             this.WhenAnyValue(x => x.UseSystemAccent)
                 .Skip(1)
+                .Throttle(TimeSpan.FromMilliseconds(300))
+                .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(async useSystem => {
                     UpdateAccentColor(useSystem);
-                    await _userSettingsService.UpdateAccentColorAsync(useSystem);
+                    try {
+                        await _userSettingsService.UpdateAccentColorAsync(useSystem);
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating accent color");
+                    }
                 });
 
             this.WhenAnyValue(x => x.UseGPU)
                 .Skip(1)
+                .Throttle(TimeSpan.FromMilliseconds(300))
+                .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(async useGPU => {
-                    await _userSettingsService.UpdateUseGPUAsync(useGPU);
+                    try {
+                        await _userSettingsService.UpdateUseGPUAsync(useGPU);
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating GPU setting");
+                    }
                 });
 
             this.WhenAnyValue(x => x.InputSensitivity)
                 .Throttle(TimeSpan.FromMilliseconds(500))
                 .Skip(1)
+                .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(async sensitivity => {
-                    await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)sensitivity);
+                    try {
+                        await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)sensitivity);
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating input sensitivity");
+                    }
+                });
+
+            this.WhenAnyValue(x => x.ContextSize)
+                .Throttle(TimeSpan.FromMilliseconds(500))
+                .Skip(1)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(async contextSize => {
+                    try {
+                        await _userSettingsService.UpdateLlamaSharpSettingsAsync(contextSize, GpuLayerCount);
+                        _logger.LogInformation($"Updated context size to {contextSize}");
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating context size");
+                    }
+                });
+
+            this.WhenAnyValue(x => x.GpuLayerCount)
+                .Throttle(TimeSpan.FromMilliseconds(500))
+                .Skip(1)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(async gpuLayerCount => {
+                    try {
+                        await _userSettingsService.UpdateLlamaSharpSettingsAsync(ContextSize, gpuLayerCount);
+                        _logger.LogInformation($"Updated GPU layer count to {gpuLayerCount}");
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error updating GPU layer count");
+                    }
                 });
 
             // Load settings
@@ -84,6 +136,37 @@ namespace Nexi.UI.ViewModels
         {
             get => _isLoading;
             set => this.RaiseAndSetIfChanged(ref _isLoading, value);
+        }
+
+        public AIModelData? SelectedModel
+        {
+            get => _selectedModel;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedModel, value);
+                if (value != null)
+                {
+                    _selectedModelId = value.Id;
+                    _logger.LogInformation($"Model selection changed to {_selectedModelId}");
+                    _ = UpdateSelectedModelAsync(_selectedModelId);
+                }
+            }
+        }
+
+        private async Task UpdateSelectedModelAsync(string modelId)
+        {
+            try
+            {
+                var settings = await _userSettingsService.UpdateSelectedModelAsync(modelId);
+                if (settings != null && settings.SelectedModelId == modelId)
+                {
+                    _logger.LogInformation($"Successfully updated selected model to {modelId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating selected model to {modelId}");
+            }
         }
 
         public int SelectedModelIndex
@@ -140,6 +223,18 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _useSystemAccent, value);
         }
 
+        public int ContextSize
+        {
+            get => _contextSize;
+            set => this.RaiseAndSetIfChanged(ref _contextSize, value);
+        }
+
+        public int GpuLayerCount
+        {
+            get => _gpuLayerCount;
+            set => this.RaiseAndSetIfChanged(ref _gpuLayerCount, value);
+        }
+
         public ICommand SaveSettingsCommand { get; }
 
         private async Task LoadSettingsAsync()
@@ -147,50 +242,35 @@ namespace Nexi.UI.ViewModels
             try
             {
                 IsLoading = true;
-
+                
                 // Load user settings
                 var settings = await _userSettingsService.GetSettingsAsync();
+                _selectedModelId = settings.SelectedModelId;
+                _useGPU = settings.UseGPU;
+                _selectedInputDevice = settings.SelectedInputDevice;
+                _inputSensitivity = settings.InputSensitivity;
                 _selectedTheme = settings.SelectedTheme;
                 _useSystemAccent = settings.UseSystemAccent;
-                _useGPU = settings.UseGPU;
-                _inputSensitivity = settings.InputSensitivity;
-                _selectedModelId = settings.SelectedModelId;
-                _selectedInputDevice = settings.SelectedInputDevice;
-
+                _contextSize = settings.ContextSize;
+                _gpuLayerCount = settings.GpuLayerCount;
+                
+                // Set input device index
                 if (settings.SelectedInputDevice == "Default")
                     _selectedInputDeviceIndex = 0;
                 else if (settings.SelectedInputDevice == "Headset")
                     _selectedInputDeviceIndex = 1;
-
-                // Load AI models
-                var models = await _aiModelService.GetAllModelsAsync();
-
-                AvailableModels.Clear();
-                foreach (var model in models)
-                {
-                    AvailableModels.Add(model);
-                }
-
-                // Set selected model
-                if (!string.IsNullOrEmpty(_selectedModelId))
-                {
-                    for (int i = 0; i < AvailableModels.Count; i++)
-                    {
-                        if (AvailableModels[i].Id == _selectedModelId)
-                        {
-                            SelectedModelIndex = i;
-                            break;
-                        }
-                    }
-                }
-
-                // Update UI with loaded settings
+                
+                // Refresh models (this will also set the selected model)
+                await RefreshModelsAsync();
+                
+                // Update UI properties
+                this.RaisePropertyChanged(nameof(UseGPU));
+                this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
+                this.RaisePropertyChanged(nameof(InputSensitivity));
                 this.RaisePropertyChanged(nameof(SelectedTheme));
                 this.RaisePropertyChanged(nameof(UseSystemAccent));
-                this.RaisePropertyChanged(nameof(UseGPU));
-                this.RaisePropertyChanged(nameof(InputSensitivity));
-                this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
-                this.RaisePropertyChanged(nameof(SelectedModelIndex));
+                this.RaisePropertyChanged(nameof(ContextSize));
+                this.RaisePropertyChanged(nameof(GpuLayerCount));
             }
             catch (Exception ex)
             {
@@ -213,7 +293,9 @@ namespace Nexi.UI.ViewModels
                     SelectedInputDevice = _selectedInputDevice,
                     InputSensitivity = (int)InputSensitivity,
                     SelectedTheme = SelectedTheme,
-                    UseSystemAccent = UseSystemAccent
+                    UseSystemAccent = UseSystemAccent,
+                    ContextSize = ContextSize,
+                    GpuLayerCount = GpuLayerCount
                 };
 
                 await _userSettingsService.UpdateSettingsAsync(settings);
@@ -232,6 +314,55 @@ namespace Nexi.UI.ViewModels
         private void UpdateAccentColor(bool useSystem)
         {
             App.UpdateAccentColor(useSystem);
+        }
+
+        public async Task RefreshModelsAsync()
+        {
+            try
+            {
+                IsLoading = true;
+                
+                // Load AI models
+                var models = await _aiModelService.GetAllModelsAsync();
+                
+                AvailableModels.Clear();
+                foreach (var model in models)
+                {
+                    // Only add models that are downloaded
+                    if (model.Status == ModelStatus.Downloaded)
+                    {
+                        AvailableModels.Add(model);
+                        _logger.LogInformation($"Added downloaded model to available models: {model.Id}");
+                    }
+                }
+                
+                // Get current settings to find the selected model
+                var settings = await _userSettingsService.GetSettingsAsync();
+                _selectedModelId = settings.SelectedModelId;
+                
+                // Set selected model if it exists and is downloaded
+                if (!string.IsNullOrEmpty(_selectedModelId))
+                {
+                    foreach (var model in AvailableModels)
+                    {
+                        if (model.Id == _selectedModelId)
+                        {
+                            _selectedModel = model;
+                            this.RaisePropertyChanged(nameof(SelectedModel));
+                            _logger.LogInformation($"Selected model {_selectedModelId} found and set as current");
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing models");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
     }
 }

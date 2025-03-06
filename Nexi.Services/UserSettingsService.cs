@@ -8,18 +8,19 @@ namespace Nexi.Services
 {
     public class UserSettingsService : IUserSettingsService
     {
-        private readonly NexiDbContext _context;
+        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<UserSettingsService> _logger;
 
-        public UserSettingsService(NexiDbContext context, ILogger<UserSettingsService> logger)
+        public UserSettingsService(IDbContextFactory<NexiDbContext> contextFactory, ILogger<UserSettingsService> logger)
         {
-            _context = context;
+            _contextFactory = contextFactory;
             _logger = logger;
         }
 
         public async Task<UserSettings> GetSettingsAsync()
         {
-            var settings = await _context.UserSettings.Include(s => s.SelectedModel).FirstOrDefaultAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var settings = await context.UserSettings.Include(s => s.SelectedModel).FirstOrDefaultAsync();
             if (settings == null)
             {
                 // Create default settings if none exist
@@ -32,76 +33,206 @@ namespace Nexi.Services
                     AccentColor = "#A880E4",
                     LastModifiedAt = DateTime.UtcNow
                 };
-                _context.UserSettings.Add(settings);
-                await _context.SaveChangesAsync();
+                context.UserSettings.Add(settings);
+                await context.SaveChangesAsync();
             }
             return settings;
         }
 
         public async Task<UserSettings> UpdateSettingsAsync(UserSettings settings)
         {
-            var existingSettings = await _context.UserSettings.FirstOrDefaultAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var existingSettings = await context.UserSettings.FirstOrDefaultAsync();
             if (existingSettings == null)
             {
-                _context.UserSettings.Add(settings);
+                context.UserSettings.Add(settings);
             }
             else
             {
-                _context.Entry(existingSettings).CurrentValues.SetValues(settings);
+                context.Entry(existingSettings).CurrentValues.SetValues(settings);
                 existingSettings.LastModifiedAt = DateTime.UtcNow;
             }
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             return existingSettings ?? settings;
         }
 
         public async Task<UserSettings> UpdateThemeAsync(ThemeMode theme)
         {
-            var settings = await GetSettingsAsync();
-            settings.SelectedTheme = theme;
-            settings.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var settings = await context.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new UserSettings
+                {
+                    SelectedTheme = theme,
+                    LastModifiedAt = DateTime.UtcNow
+                };
+                context.UserSettings.Add(settings);
+            }
+            else
+            {
+                settings.SelectedTheme = theme;
+                settings.LastModifiedAt = DateTime.UtcNow;
+            }
+            await context.SaveChangesAsync();
             return settings;
         }
 
-        public async Task<UserSettings> UpdateSelectedModelAsync(string modelId)
+        public async Task<UserSettings> UpdateSelectedModelAsync(string? modelId)
         {
-            var settings = await GetSettingsAsync();
-            settings.SelectedModelId = modelId;
-            settings.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return settings;
+            try
+            {
+                using var context = await _contextFactory.CreateDbContextAsync();
+                var settings = await context.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings
+                    {
+                        SelectedModelId = modelId,
+                        LastModifiedAt = DateTime.UtcNow
+                    };
+                    context.UserSettings.Add(settings);
+                    await context.SaveChangesAsync();
+                    return settings;
+                }
+                
+                // If modelId is null, just clear the selection
+                if (modelId == null)
+                {
+                    settings.SelectedModelId = null;
+                    settings.SelectedModel = null;
+                    settings.LastModifiedAt = DateTime.UtcNow;
+                    await context.SaveChangesAsync();
+                    _logger.LogInformation("Cleared selected model");
+                    return settings;
+                }
+                
+                // Validate the model exists in the database
+                var model = await context.AIModels.FindAsync(modelId);
+                if (model == null)
+                {
+                    _logger.LogWarning($"Model {modelId} not found in database, not updating selection");
+                    return settings;
+                }
+                
+                // Update the settings
+                settings.SelectedModelId = modelId;
+                settings.SelectedModel = model;
+                settings.LastModifiedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+                _logger.LogInformation($"Updated selected model to {modelId}");
+                return settings;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating selected model to {modelId}");
+                throw;
+            }
         }
 
         public async Task<UserSettings> UpdateUseGPUAsync(bool useGPU)
         {
-            var settings = await GetSettingsAsync();
-            settings.UseGPU = useGPU;
-            settings.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var settings = await context.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new UserSettings
+                {
+                    UseGPU = useGPU,
+                    LastModifiedAt = DateTime.UtcNow
+                };
+                context.UserSettings.Add(settings);
+            }
+            else
+            {
+                settings.UseGPU = useGPU;
+                settings.LastModifiedAt = DateTime.UtcNow;
+            }
+            await context.SaveChangesAsync();
             return settings;
         }
 
         public async Task<UserSettings> UpdateVoiceSettingsAsync(string? inputDevice, int sensitivity)
         {
-            var settings = await GetSettingsAsync();
-            settings.SelectedInputDevice = inputDevice;
-            settings.InputSensitivity = sensitivity;
-            settings.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var settings = await context.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new UserSettings
+                {
+                    SelectedInputDevice = inputDevice,
+                    InputSensitivity = sensitivity,
+                    LastModifiedAt = DateTime.UtcNow
+                };
+                context.UserSettings.Add(settings);
+            }
+            else
+            {
+                settings.SelectedInputDevice = inputDevice;
+                settings.InputSensitivity = sensitivity;
+                settings.LastModifiedAt = DateTime.UtcNow;
+            }
+            await context.SaveChangesAsync();
             return settings;
         }
 
         public async Task<UserSettings> UpdateAccentColorAsync(bool useSystem, string? color = null)
         {
-            var settings = await GetSettingsAsync();
-            settings.UseSystemAccent = useSystem;
-            if (!useSystem && !string.IsNullOrEmpty(color))
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var settings = await context.UserSettings.FirstOrDefaultAsync();
+            if (settings == null)
             {
-                settings.AccentColor = color;
+                settings = new UserSettings
+                {
+                    UseSystemAccent = useSystem,
+                    AccentColor = color ?? "#A880E4",
+                    LastModifiedAt = DateTime.UtcNow
+                };
+                context.UserSettings.Add(settings);
             }
-            settings.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            else
+            {
+                settings.UseSystemAccent = useSystem;
+                if (!useSystem && !string.IsNullOrEmpty(color))
+                {
+                    settings.AccentColor = color;
+                }
+                settings.LastModifiedAt = DateTime.UtcNow;
+            }
+            await context.SaveChangesAsync();
             return settings;
+        }
+
+        public async Task<UserSettings> UpdateLlamaSharpSettingsAsync(int contextSize, int gpuLayerCount)
+        {
+            try
+            {
+                using var context = await _contextFactory.CreateDbContextAsync();
+                var settings = await context.UserSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    settings = new UserSettings
+                    {
+                        ContextSize = contextSize,
+                        GpuLayerCount = gpuLayerCount,
+                        LastModifiedAt = DateTime.UtcNow
+                    };
+                    context.UserSettings.Add(settings);
+                }
+                else
+                {
+                    settings.ContextSize = contextSize;
+                    settings.GpuLayerCount = gpuLayerCount;
+                    settings.LastModifiedAt = DateTime.UtcNow;
+                }
+                await context.SaveChangesAsync();
+                return settings;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating LlamaSharp settings");
+                throw;
+            }
         }
     }
 }

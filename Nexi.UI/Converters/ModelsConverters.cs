@@ -30,4 +30,80 @@ namespace Nexi.UI.Converters
             throw new NotImplementedException();
         }
     }
+    
+    public class ModelStatusToDownloadVisibilityConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is ModelStatus status)
+            {
+                return status == ModelStatus.NotDownloaded || status == ModelStatus.Error;
+            }
+            return false;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+    
+    public class ModelStatusToDeleteVisibilityConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is ModelStatus status)
+            {
+                return status == ModelStatus.Downloaded;
+            }
+            return false;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+    
+    public class StringEqualityConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is string valueStr && parameter is string paramStr)
+            {
+                return valueStr == paramStr;
+            }
+            return false;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is bool isChecked && isChecked && parameter is string paramStr)
+            {
+                return paramStr;
+            }
+            return null;
+        }
+    }
+    
+    public class EqualityConverter : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value != null && parameter != null)
+            {
+                return value.Equals(parameter);
+            }
+            return value == parameter;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is bool isEqual && isEqual && parameter != null)
+            {
+                return parameter;
+            }
+            return null;
+        }
+    }
 }

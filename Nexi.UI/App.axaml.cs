@@ -14,6 +14,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Nexi.Data.Context;
 using System.Threading.Tasks;
+using Avalonia.Threading;
+using Microsoft.Extensions.Http;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Nexi.UI
 {
@@ -39,10 +42,9 @@ namespace Nexi.UI
                 configure.AddConsole();
             });
 
-            // Add DbContext
-            services.AddDbContext<NexiDbContext>(options =>
-                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"),
-                ServiceLifetime.Scoped);
+            // Add DbContext Factory instead of DbContext
+            services.AddDbContextFactory<NexiDbContext>(options =>
+                options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
 
             // Register services
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
@@ -50,6 +52,10 @@ namespace Nexi.UI
             services.AddScoped<IChatStorageService, ChatStorageService>();
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
+            
+            // Register new services for LlamaSharp
+            services.AddSingleton<ILlamaSharpService, LlamaSharpService>();
+            services.AddHttpClient();
 
             // Register ViewModels
             services.AddSingleton<MainViewModel>();
@@ -67,8 +73,9 @@ namespace Nexi.UI
 
             services.AddTransient(provider => {
                 var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 var logger = provider.GetRequiredService<ILogger<ModelsViewModel>>();
-                return new ModelsViewModel(aiModelService, logger);
+                return new ModelsViewModel(aiModelService, userSettingsService, logger);
             });
 
             services.AddTransient(provider => {
@@ -82,8 +89,11 @@ namespace Nexi.UI
                 var commandProcessor = provider.GetRequiredService<ICommandProcessor>();
                 var voiceService = provider.GetRequiredService<IVoiceService>();
                 var chatStorage = provider.GetRequiredService<IChatStorageService>();
+                var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
+                var llamaSharpService = provider.GetRequiredService<ILlamaSharpService>();
                 var logger = provider.GetRequiredService<ILogger<ChatViewModel>>();
-                return new ChatViewModel(commandProcessor, voiceService, chatStorage, logger);
+                return new ChatViewModel(commandProcessor, voiceService, chatStorage, aiModelService, userSettingsService, llamaSharpService, logger);
             });
 
             return services.BuildServiceProvider();
@@ -98,6 +108,35 @@ namespace Nexi.UI
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
+                // Set up global exception handling
+                AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+                {
+                    var logger = Services.GetRequiredService<ILogger<App>>();
+                    logger.LogError(e.ExceptionObject as Exception, "Unhandled exception in application");
+                    
+                    // We can't prevent the app from terminating in this event handler,
+                    // but we can log the error and perform cleanup
+                    try
+                    {
+                        // Perform any necessary cleanup
+                        logger.LogInformation("Performing cleanup before application termination");
+                    }
+                    catch
+                    {
+                        // Suppress any exceptions in the exception handler
+                    }
+                };
+                
+                // Also handle exceptions in the UI thread
+                Dispatcher.UIThread.UnhandledException += (sender, e) =>
+                {
+                    var logger = Services.GetRequiredService<ILogger<App>>();
+                    logger.LogError(e.Exception, "Unhandled exception in UI thread");
+                    
+                    // Mark as handled to prevent app crash
+                    e.Handled = true;
+                };
+                
                 var mainViewModel = Services.GetRequiredService<MainViewModel>();
                 desktop.MainWindow = new MainWindow
                 {

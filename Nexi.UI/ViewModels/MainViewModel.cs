@@ -4,6 +4,9 @@ using Nexi.Services.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using Microsoft.Extensions.Logging;
+using System.Reactive.Linq;
+using Avalonia.Threading;
+using System.Linq;
 
 namespace Nexi.UI.ViewModels
 {
@@ -17,22 +20,42 @@ namespace Nexi.UI.ViewModels
         private readonly ICommandProcessor _commandProcessor;
         private readonly IVoiceService _voiceService;
         private readonly IChatStorageService _chatStorage;
+        private readonly IAIModelService _aiModelService;
+        private readonly IUserSettingsService _userSettingsService;
         private readonly IServiceProvider _serviceProvider;
+        private readonly ILlamaSharpService _llamaSharpService;
+        private string? _selectedModelId;
+        private ChatViewModel _currentChatViewModel;
+        private readonly ILogger<MainViewModel> _logger;
 
         public MainViewModel(
-    ICommandProcessor commandProcessor,
-    IVoiceService voiceService,
-    IChatStorageService chatStorage,
-    IServiceProvider serviceProvider)
+            ICommandProcessor commandProcessor,
+            IVoiceService voiceService,
+            IChatStorageService chatStorage,
+            IAIModelService aiModelService,
+            IUserSettingsService userSettingsService,
+            IServiceProvider serviceProvider)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
             _chatStorage = chatStorage;
+            _aiModelService = aiModelService;
+            _userSettingsService = userSettingsService;
             _serviceProvider = serviceProvider;
+            _logger = serviceProvider.GetRequiredService<ILogger<MainViewModel>>();
+            _llamaSharpService = serviceProvider.GetRequiredService<ILlamaSharpService>();
 
             // Initialize with ChatView
             var logger = serviceProvider.GetRequiredService<ILogger<ChatViewModel>>();
-            _currentPage = new ChatViewModel(_commandProcessor, _voiceService, _chatStorage, logger);
+            _currentChatViewModel = new ChatViewModel(
+                _commandProcessor, 
+                _voiceService, 
+                _chatStorage, 
+                _aiModelService, 
+                _userSettingsService,
+                _llamaSharpService,
+                logger);
+            _currentPage = _currentChatViewModel;
 
             UpdateSidebarWidth();
 
@@ -46,6 +69,93 @@ namespace Nexi.UI.ViewModels
             ChatHistoryCommand = ReactiveCommand.Create(NavigateToChatHistory);
             ModelsCommand = ReactiveCommand.Create(NavigateToModels);
             SettingsCommand = ReactiveCommand.Create(NavigateToSettings);
+
+            // Load the selected model from settings
+            _ = RefreshSelectedModelAsync();
+        }
+
+        private async System.Threading.Tasks.Task RefreshSelectedModelAsync()
+        {
+            try
+            {
+                // Get the selected model from settings
+                var settings = await _userSettingsService.GetSettingsAsync();
+                
+                if (!string.IsNullOrEmpty(settings.SelectedModelId))
+                {
+                    _selectedModelId = settings.SelectedModelId;
+                    
+                    // Check if the model is downloaded
+                    var model = await _aiModelService.GetModelAsync(_selectedModelId);
+                    if (model != null && model.Status == Data.Models.ModelStatus.Downloaded)
+                    {
+                        // Update the current chat view model if it exists
+                        if (_currentChatViewModel != null)
+                        {
+                            _currentChatViewModel.SelectedModelId = _selectedModelId;
+                            _logger.LogInformation($"Updated current chat view model with selected model {_selectedModelId}");
+                        }
+                        
+                        // Log success
+                        _logger.LogInformation($"Successfully loaded model {_selectedModelId}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Selected model {_selectedModelId} is not downloaded or not found");
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("No model selected in settings");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing selected model");
+            }
+        }
+
+        private async System.Threading.Tasks.Task LoadSelectedModelAsync()
+        {
+            try
+            {
+                // Get the selected model from settings
+                var settings = await _userSettingsService.GetSettingsAsync();
+                
+                if (!string.IsNullOrEmpty(settings.SelectedModelId))
+                {
+                    _selectedModelId = settings.SelectedModelId;
+                    
+                    // Check if the model is downloaded
+                    var model = await _aiModelService.GetModelAsync(_selectedModelId);
+                    if (model != null && model.Status == Data.Models.ModelStatus.Downloaded)
+                    {
+                        // Log success
+                        _logger.LogInformation($"Successfully loaded model {_selectedModelId}");
+                        return;
+                    }
+                }
+                
+                // If we get here, either no model is selected or the selected model is not available
+                // Try to find a downloaded model to use as default
+                var models = await _aiModelService.GetAllModelsAsync();
+                var downloadedModel = models.FirstOrDefault(m => m.Status == Data.Models.ModelStatus.Downloaded);
+                
+                if (downloadedModel != null)
+                {
+                    _selectedModelId = downloadedModel.Id;
+                    await _userSettingsService.UpdateSelectedModelAsync(_selectedModelId);
+                    _logger.LogInformation($"Saved selected model {_selectedModelId} to settings");
+                }
+                else
+                {
+                    _logger.LogWarning("No downloaded models available");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading selected model");
+            }
         }
 
         public bool IsSidebarExpanded
@@ -81,32 +191,106 @@ namespace Nexi.UI.ViewModels
         public ICommand ModelsCommand { get; }
         public ICommand SettingsCommand { get; }
 
-        private void NavigateToNewChat()
+        private async void NavigateToNewChat()
         {
+            // Refresh the selected model before creating a new chat
+            await RefreshSelectedModelAsync();
+            
             // Make sure parameters are in the correct order
-            CurrentPage = new ChatViewModel(
+            _currentChatViewModel = new ChatViewModel(
                 _commandProcessor,
                 _voiceService,
                 _chatStorage,
-                _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>()  // Logger is 4th parameter
+                _aiModelService,
+                _userSettingsService,
+                _llamaSharpService,
+                _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>()
             );
+            
+            // Set the selected model
+            if (!string.IsNullOrEmpty(_selectedModelId))
+            {
+                _currentChatViewModel.SelectedModelId = _selectedModelId;
+                _logger.LogInformation($"Set selected model {_selectedModelId} on new chat view model");
+            }
+            else
+            {
+                _logger.LogWarning("No selected model available for new chat");
+            }
+            
+            CurrentPage = _currentChatViewModel;
         }
 
-        private void NavigateToChatHistory()
+        private async void NavigateToChatHistory()
         {
+            // Refresh the selected model before navigating
+            await RefreshSelectedModelAsync();
+            
             var chatHistoryVm = _serviceProvider.GetRequiredService<ChatHistoryViewModel>();
             CurrentPage = chatHistoryVm;
         }
 
-        private void NavigateToModels()
+        private async void NavigateToModels()
         {
+            // Refresh the selected model before navigating
+            await RefreshSelectedModelAsync();
+            
             var modelsVm = _serviceProvider.GetRequiredService<ModelsViewModel>();
+            
+            // Subscribe to model selection changes
+            modelsVm.WhenAnyValue(x => x.SelectedModelId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Subscribe(async id => 
+                {
+                    _selectedModelId = id;
+                    _logger.LogInformation($"Model selection changed to {id} in ModelsView");
+                    
+                    // Update the current chat view model
+                    if (_currentChatViewModel != null)
+                    {
+                        _currentChatViewModel.SelectedModelId = id;
+                        _logger.LogInformation($"Updated current chat view model with selected model {id}");
+                    }
+                    
+                    // Save to settings
+                    await _userSettingsService.UpdateSelectedModelAsync(id);
+                    _logger.LogInformation($"Saved selected model {id} to settings");
+                });
+                
             CurrentPage = modelsVm;
         }
 
-        private void NavigateToSettings()
+        private async void NavigateToSettings()
         {
+            // Refresh the selected model before navigating
+            await RefreshSelectedModelAsync();
+            
             var settingsVm = _serviceProvider.GetRequiredService<SettingsViewModel>();
+            
+            // Refresh models in the settings view
+            await settingsVm.RefreshModelsAsync();
+            
+            // Subscribe to model selection changes
+            settingsVm.WhenAnyValue(x => x.SelectedModelIndex)
+                .Where(index => index >= 0 && index < settingsVm.AvailableModels.Count)
+                .Subscribe(async index => 
+                {
+                    var selectedModel = settingsVm.AvailableModels[index];
+                    _selectedModelId = selectedModel.Id;
+                    _logger.LogInformation($"Model selection changed to {_selectedModelId} in SettingsView");
+                    
+                    // Update the current chat view model
+                    if (_currentChatViewModel != null)
+                    {
+                        _currentChatViewModel.SelectedModelId = _selectedModelId;
+                        _logger.LogInformation($"Updated current chat view model with selected model {_selectedModelId}");
+                    }
+                    
+                    // Save to settings
+                    await _userSettingsService.UpdateSelectedModelAsync(_selectedModelId);
+                    _logger.LogInformation($"Saved selected model {_selectedModelId} to settings");
+                });
+                
             CurrentPage = settingsVm;
         }
     }

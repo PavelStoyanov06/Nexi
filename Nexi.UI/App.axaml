@@ -11,6 +11,10 @@
     <converters:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter"/>
     <converters:BoolToForegroundConverter x:Key="BoolToForegroundConverter"/>
     <converters:ModelStatusToBrushConverter x:Key="ModelStatusToBrushConverter"/>
+    <converters:ModelStatusToDownloadVisibilityConverter x:Key="ModelStatusToDownloadVisibilityConverter"/>
+    <converters:ModelStatusToDeleteVisibilityConverter x:Key="ModelStatusToDeleteVisibilityConverter"/>
+    <converters:StringEqualityConverter x:Key="StringEqualityConverter"/>
+    <converters:EqualityConverter x:Key="EqualityConverter"/>
   </Application.Resources>
 
   <Application.Styles>
@@ -21,5 +25,14 @@
       </FluentTheme.Palettes>
     </FluentTheme>
     <material:MaterialIconStyles />
-    </Application.Styles>
+    
+    <Style Selector="Button.TransparentButton">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    
+    <!-- Include styles without x:Key -->
+    <StyleInclude Source="/Styles/TransparentButton.axaml"/>
+    <StyleInclude Source="/Styles/AccentButton.axaml"/>
+  </Application.Styles>
 </Application>

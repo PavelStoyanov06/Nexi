@@ -30,6 +30,9 @@ namespace Nexi.Data.Models
 
         public DateTime? DownloadedDate { get; set; }
 
+        [MaxLength(200)]
+        public string RepositoryId { get; set; } = "onnx-community/Llama-3.2-1B-Instruct";
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime LastModifiedAt { get; set; } = DateTime.UtcNow;

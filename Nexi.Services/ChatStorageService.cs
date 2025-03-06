@@ -8,17 +8,18 @@ namespace Nexi.Services
 {
     public class ChatStorageService : IChatStorageService
     {
-        private readonly NexiDbContext _context;
+        private readonly IDbContextFactory<NexiDbContext> _contextFactory;
         private readonly ILogger<ChatStorageService> _logger;
 
-        public ChatStorageService(NexiDbContext context, ILogger<ChatStorageService> logger)
+        public ChatStorageService(IDbContextFactory<NexiDbContext> contextFactory, ILogger<ChatStorageService> logger)
         {
-            _context = context;
+            _contextFactory = contextFactory;
             _logger = logger;
         }
 
         public async Task<ChatSession> CreateSessionAsync(string title)
         {
+            using var context = await _contextFactory.CreateDbContextAsync();
             var session = new ChatSession
             {
                 Title = title,
@@ -26,77 +27,87 @@ namespace Nexi.Services
                 LastModifiedAt = DateTime.UtcNow
             };
 
-            _context.ChatSessions.Add(session);
-            await _context.SaveChangesAsync();
+            context.ChatSessions.Add(session);
+            await context.SaveChangesAsync();
+
             return session;
         }
 
         public async Task<ChatSession?> GetSessionAsync(string id)
         {
-            return await _context.ChatSessions
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.ChatSessions
                 .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == id);
         }
 
         public async Task<IEnumerable<ChatSession>> GetAllSessionsAsync()
         {
-            return await _context.ChatSessions
-                .Include(s => s.Messages)
+            using var context = await _contextFactory.CreateDbContextAsync();
+            return await context.ChatSessions
                 .OrderByDescending(s => s.LastModifiedAt)
                 .ToListAsync();
         }
 
         public async Task<IEnumerable<ChatSession>> SearchSessionsAsync(string query)
         {
-            query = query.ToLower();
-            return await _context.ChatSessions
-                .Include(s => s.Messages)
-                .Where(s =>
-                    s.Title.ToLower().Contains(query) ||
-                    s.Messages.Any(m => m.Content.ToLower().Contains(query)))
+            using var context = await _contextFactory.CreateDbContextAsync();
+            if (string.IsNullOrWhiteSpace(query))
+                return await GetAllSessionsAsync();
+
+            return await context.ChatSessions
+                .Where(s => s.Title.Contains(query))
                 .OrderByDescending(s => s.LastModifiedAt)
                 .ToListAsync();
         }
 
         public async Task SaveSessionAsync(ChatSession session)
         {
-            _context.Entry(session).State = EntityState.Modified;
-            await _context.SaveChangesAsync();
+            using var context = await _contextFactory.CreateDbContextAsync();
+            context.ChatSessions.Update(session);
+            await context.SaveChangesAsync();
         }
 
         public async Task DeleteSessionAsync(string id)
         {
-            var session = await _context.ChatSessions.FindAsync(id);
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var session = await context.ChatSessions.FindAsync(id);
             if (session != null)
             {
-                _context.ChatSessions.Remove(session);
-                await _context.SaveChangesAsync();
+                context.ChatSessions.Remove(session);
+                await context.SaveChangesAsync();
             }
         }
 
         public async Task<ChatSession> AddMessageAsync(string sessionId, ChatMessageData message)
         {
-            var session = await _context.ChatSessions
+            using var context = await _contextFactory.CreateDbContextAsync();
+            var session = await context.ChatSessions
                 .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == sessionId);
 
             if (session == null)
-                throw new KeyNotFoundException($"Session {sessionId} not found");
+                throw new KeyNotFoundException($"Chat session {sessionId} not found");
 
             message.SessionId = sessionId;
+            message.Timestamp = DateTime.UtcNow;
+            
             session.Messages.Add(message);
             session.LastModifiedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
+            
+            await context.SaveChangesAsync();
+            
             return session;
         }
 
         public async Task<bool> ClearHistoryAsync()
         {
+            using var context = await _contextFactory.CreateDbContextAsync();
             try
             {
-                await _context.Database.ExecuteSqlRawAsync("DELETE FROM ChatMessages");
-                await _context.Database.ExecuteSqlRawAsync("DELETE FROM ChatSessions");
+                var sessions = await context.ChatSessions.ToListAsync();
+                context.ChatSessions.RemoveRange(sessions);
+                await context.SaveChangesAsync();
                 return true;
             }
             catch (Exception ex)
