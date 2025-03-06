@@ -12,7 +12,7 @@ using Nexi.Data.Context;
 namespace Nexi.Data.Migrations
 {
     [DbContext(typeof(NexiDbContext))]
-    [Migration("20250220211319_InitialCreate")]
+    [Migration("20250306115111_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

@@ -24,6 +24,7 @@ namespace Nexi.UI.Desktop
                 .Build();
 
             var services = new ServiceCollection();
+
             services.AddDbContext<NexiDbContext>(options =>
                 options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
@@ -33,7 +34,5 @@ namespace Nexi.UI.Desktop
                 .LogToTrace()
                 .UseReactiveUI();
         }
-
-
     }
 }

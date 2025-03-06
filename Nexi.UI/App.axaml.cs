@@ -104,6 +104,13 @@ namespace Nexi.UI
                     DataContext = mainViewModel
                 };
 
+                // Ensure database is created
+                using (var scope = Services.CreateScope())
+                {
+                    var dbContext = scope.ServiceProvider.GetRequiredService<NexiDbContext>();
+                    await dbContext.Database.EnsureCreatedAsync();
+                }
+
                 // Load and apply user settings on startup
                 await LoadAndApplyUserSettingsAsync();
             }
