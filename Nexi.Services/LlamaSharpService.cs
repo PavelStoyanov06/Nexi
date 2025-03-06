@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Nexi.Services.Interfaces;
 using LLama.Sampling;
 using System.Linq;
+using System.Text;
 
 namespace Nexi.Services
 {
@@ -508,12 +509,73 @@ namespace Nexi.Services
             {
                 // Manually collect tokens from the stream
                 List<string> responseTokens = new List<string>();
+                StringBuilder fullResponse = new StringBuilder();
+                bool stopYielding = false;
                 
                 await foreach (var token in responseStream)
                 {
                     _logger.LogDebug("Token received: {Token}", token);
                     responseTokens.Add(token);
-                    yield return token;
+                    
+                    // If we've already found an anti-prompt, stop yielding tokens
+                    if (stopYielding)
+                    {
+                        continue;
+                    }
+                    
+                    // Add the token to our full response
+                    fullResponse.Append(token);
+                    string currentResponse = fullResponse.ToString();
+                    
+                    // Check for anti-prompts (User:, Human:)
+                    bool foundAntiPrompt = false;
+                    string cleanToken = token;
+                    
+                    foreach (var antiPrompt in new[] { "User:", "Human:" })
+                    {
+                        if (currentResponse.EndsWith(antiPrompt, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogDebug("Anti-prompt detected: {AntiPrompt}", antiPrompt);
+                            foundAntiPrompt = true;
+                            
+                            // Calculate how much of the anti-prompt is in the current token
+                            int overlapLength = 0;
+                            for (int i = 1; i <= antiPrompt.Length && i <= token.Length; i++)
+                            {
+                                if (currentResponse.EndsWith(antiPrompt.Substring(0, i), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    overlapLength = i;
+                                }
+                            }
+                            
+                            // Remove the anti-prompt portion from the token
+                            if (overlapLength > 0)
+                            {
+                                cleanToken = token.Substring(0, token.Length - overlapLength);
+                                _logger.LogDebug("Cleaned token: '{CleanToken}' (removed {OverlapLength} characters)", 
+                                    cleanToken, overlapLength);
+                            }
+                            
+                            break;
+                        }
+                    }
+                    
+                    // If we found an anti-prompt, this is the last token we'll yield
+                    if (foundAntiPrompt)
+                    {
+                        stopYielding = true;
+                        
+                        // Only yield the clean token if it's not empty
+                        if (!string.IsNullOrEmpty(cleanToken))
+                        {
+                            yield return cleanToken;
+                        }
+                    }
+                    else
+                    {
+                        // Otherwise, yield the token as-is
+                        yield return token;
+                    }
                 }
                 
                 // Check if we received any tokens
