@@ -3,12 +3,20 @@ using Microsoft.Extensions.Logging;
 using Nexi.Data.Context;
 using Nexi.Data.Models;
 using Nexi.Services.Interfaces;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 namespace Nexi.Services
 {
     public class AIModelService : IAIModelService
     {
-        private readonly NexiDbContext _context;
         private readonly ILogger<AIModelService> _logger;
         private readonly HttpClient _httpClient;
         private readonly IDbContextFactory<NexiDbContext> _contextFactory;
@@ -16,26 +24,26 @@ namespace Nexi.Services
         private readonly string _modelsDirectory;
         private readonly Dictionary<string, CancellationTokenSource> _downloadCancellationTokens = new();
         private readonly Dictionary<string, Task> _downloadTasks = new();
+        
+        // Semaphore to prevent multiple model initializations at once
+        private readonly SemaphoreSlim _modelInitSemaphore = new SemaphoreSlim(1, 1);
 
         public AIModelService(
-            NexiDbContext context, 
             ILogger<AIModelService> logger,
             IDbContextFactory<NexiDbContext> contextFactory,
             ILlamaSharpService llamaSharpService)
         {
-            _context = context;
-            _logger = logger;
-            _httpClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromHours(1) // Set a long timeout for large file downloads
-            };
-            _contextFactory = contextFactory;
-            _llamaSharpService = llamaSharpService;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+            _llamaSharpService = llamaSharpService ?? throw new ArgumentNullException(nameof(llamaSharpService));
+            _httpClient = new HttpClient();
             
-            // Create models directory if it doesn't exist
-            _modelsDirectory = Path.Combine(
+            // Set up models directory
+            string appDataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Nexi", "Models");
+                "Nexi");
+            
+            _modelsDirectory = Path.Combine(appDataPath, "Models");
             
             if (!Directory.Exists(_modelsDirectory))
             {
@@ -45,53 +53,114 @@ namespace Nexi.Services
 
         public async Task<IEnumerable<AIModelData>> GetAllModelsAsync()
         {
-            return await _context.AIModels.ToListAsync();
+            try
+            {
+                using var context = await _contextFactory.CreateDbContextAsync();
+                return await context.AIModels.ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all models");
+                return Enumerable.Empty<AIModelData>();
+            }
         }
 
         public async Task<AIModelData?> GetModelAsync(string id)
         {
-            return await _context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
+            try
+            {
+                using var context = await _contextFactory.CreateDbContextAsync();
+                return await context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving model with ID {ModelId}", id);
+                return null;
+            }
         }
 
         public async Task<AIModelData> UpdateModelStatusAsync(string id, ModelStatus status)
         {
-            var model = await _context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
-            if (model == null)
+            try
             {
-                throw new ArgumentException($"Model with ID {id} not found");
+                using var context = await _contextFactory.CreateDbContextAsync();
+                var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
+                
+                if (model == null)
+                {
+                    throw new KeyNotFoundException($"Model with ID {id} not found");
+                }
+                
+                model.Status = status;
+                model.LastModifiedAt = DateTime.UtcNow;
+                
+                await context.SaveChangesAsync();
+                return model;
             }
-
-            model.Status = status;
-            model.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return model;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating model status for ID {ModelId}", id);
+                throw;
+            }
         }
 
         public async Task<bool> DeleteModelAsync(string id)
         {
-            var model = await _context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
-            if (model == null)
+            try
             {
+                using var context = await _contextFactory.CreateDbContextAsync();
+                var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
+                
+                if (model == null)
+                {
+                    return false;
+                }
+                
+                // Cancel any ongoing download
+                CancelDownload(id);
+                
+                // Delete the model directory if it exists
+                string modelDir = Path.Combine(_modelsDirectory, id);
+                if (Directory.Exists(modelDir))
+                {
+                    Directory.Delete(modelDir, true);
+                }
+                
+                context.AIModels.Remove(model);
+                await context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting model with ID {ModelId}", id);
                 return false;
             }
-
-            _context.AIModels.Remove(model);
-            await _context.SaveChangesAsync();
-            return true;
         }
 
         public async Task<AIModelData> StartDownloadModelAsync(string id)
         {
-            var model = await _context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
-            if (model == null)
+            try
             {
-                throw new ArgumentException($"Model with ID {id} not found");
+                var model = await GetModelAsync(id);
+                
+                if (model == null)
+                {
+                    throw new KeyNotFoundException($"Model with ID {id} not found");
+                }
+                
+                if (model.Status == ModelStatus.Downloading)
+                {
+                    return model;
+                }
+                
+                await UpdateModelStatusAsync(id, ModelStatus.Downloading);
+                return model;
             }
-
-            model.Status = ModelStatus.Downloading;
-            model.LastModifiedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return model;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting model download for ID {ModelId}", id);
+                throw;
+            }
         }
 
         public async Task<AIModelData> DownloadModelFromHuggingFaceAsync(string id, string repoId, IProgress<(string, int)>? progress = null)
@@ -102,59 +171,160 @@ namespace Nexi.Services
 
         public async Task<bool> IsModelDownloadedAsync(string id)
         {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
-            return model != null && model.Status == ModelStatus.Downloaded;
+            var model = await GetModelAsync(id);
+            return model?.Status == ModelStatus.Downloaded;
         }
 
         public async Task<string> GetModelLocalPathAsync(string id)
         {
-            using var context = await _contextFactory.CreateDbContextAsync();
-            var model = await context.AIModels.FirstOrDefaultAsync(m => m.Id == id);
-            return model?.LocalPath ?? string.Empty;
-        }
-
-        public async Task<bool> RunModelInferenceAsync(string id, string prompt, Action<string> onTokenGenerated)
-        {
             try
             {
-                // Get model path
-                var modelPath = await GetModelLocalPathAsync(id);
-                if (string.IsNullOrEmpty(modelPath))
+                var model = await GetModelAsync(id);
+                
+                if (model == null)
                 {
-                    _logger.LogError($"Model {id} not found or not downloaded");
-                    return false;
+                    throw new KeyNotFoundException($"Model with ID {id} not found");
                 }
-
-                // Get user settings for LlamaSharp
-                using var context = await _contextFactory.CreateDbContextAsync();
-                var settings = await context.UserSettings.FirstOrDefaultAsync();
-                if (settings == null)
+                
+                if (string.IsNullOrEmpty(model.LocalPath))
                 {
-                    _logger.LogError("User settings not found");
-                    return false;
+                    throw new InvalidOperationException($"Model {id} does not have a local path set");
                 }
-
-                // Initialize LlamaSharp model
-                var initialized = await _llamaSharpService.InitializeModelAsync(
-                    modelPath,
-                    settings.ContextSize,
-                    settings.UseGPU ? settings.GpuLayerCount : 0);
-
-                if (!initialized)
-                {
-                    _logger.LogError($"Failed to initialize LlamaSharp model {id}");
-                    return false;
-                }
-
-                // Generate response
-                await _llamaSharpService.GenerateResponseAsync(prompt, onTokenGenerated);
-                return true;
+                
+                return model.LocalPath;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error running inference for model {id}");
-                return false;
+                _logger.LogError(ex, "Error getting local path for model ID {ModelId}", id);
+                throw;
+            }
+        }
+
+        public async Task<string> RunInferenceAsync(string modelId, string prompt, Action<string> onTokenGenerated, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var model = await GetModelAsync(modelId);
+                if (model == null)
+                {
+                    _logger.LogError("Model with ID {ModelId} not found", modelId);
+                    onTokenGenerated?.Invoke("[Error: Model not found]");
+                    return "Error: Model not found";
+                }
+
+                if (string.IsNullOrEmpty(model.LocalPath) || !File.Exists(model.LocalPath))
+                {
+                    _logger.LogError("Model file not found at path: {Path}", model.LocalPath);
+                    onTokenGenerated?.Invoke("[Error: Model file not found]");
+                    return "Error: Model file not found";
+                }
+
+                // Check if the native library exists before attempting to initialize the model
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string runtimesDir = Path.Combine(baseDir, "runtimes");
+                string platform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "win" :
+                                 RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" :
+                                 RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "osx" : "unknown";
+                string arch = RuntimeInformation.ProcessArchitecture == Architecture.X64 ? "x64" :
+                             RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x86";
+                string nativeLibPath = Path.Combine(runtimesDir, $"{platform}-{arch}", "native");
+                string libraryName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "llama.dll" :
+                                    RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "libllama.so" :
+                                    RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "libllama.dylib" : "unknown";
+                
+                string fullLibPath = Path.Combine(nativeLibPath, libraryName);
+                bool libraryExists = File.Exists(fullLibPath);
+                
+                // Also check subdirectories
+                if (!libraryExists)
+                {
+                    string[] subDirs = { "avx", "avx2", "avx512", "noavx" };
+                    foreach (var subDir in subDirs)
+                    {
+                        string subDirPath = Path.Combine(nativeLibPath, subDir);
+                        string subLibPath = Path.Combine(subDirPath, libraryName);
+                        if (File.Exists(subLibPath))
+                        {
+                            libraryExists = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!libraryExists)
+                {
+                    _logger.LogError("Native library not found at expected path: {Path} or in subdirectories", fullLibPath);
+                    onTokenGenerated?.Invoke("[Error: Native library not found. Please ensure LlamaSharp native libraries are installed correctly.]");
+                    return "Error: Native library not found";
+                }
+
+                // Get user settings for context size and GPU layers
+                using var dbContext = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                var settings = await dbContext.UserSettings.FirstOrDefaultAsync(cancellationToken);
+                int contextSize = settings?.ContextSize ?? 1024;
+                int gpuLayerCount = settings?.UseGPU == true ? settings.GpuLayerCount : 0;
+
+                _logger.LogInformation("Running inference with model {ModelId}, contextSize={ContextSize}, gpuLayerCount={GpuLayerCount}", 
+                    modelId, contextSize, gpuLayerCount);
+
+                // Try to initialize the model with GPU support first
+                bool initialized = false;
+                Exception? lastException = null;
+                
+                try
+                {
+                    initialized = await _llamaSharpService.InitializeModelAsync(model.LocalPath, contextSize, gpuLayerCount);
+                }
+                catch (DllNotFoundException dllEx)
+                {
+                    _logger.LogError(dllEx, "Native library not found or could not be loaded");
+                    lastException = dllEx;
+                    
+                    // Don't retry if the DLL is missing
+                    onTokenGenerated?.Invoke("[Error: Native library not found or could not be loaded. Please ensure LlamaSharp native libraries are installed correctly.]");
+                    return "Error: Native library not found or could not be loaded";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error initializing model with GPU layers: {Message}", ex.Message);
+                    lastException = ex;
+                }
+                
+                // If GPU initialization failed, try CPU-only mode
+                if (!initialized && gpuLayerCount > 0)
+                {
+                    _logger.LogWarning("GPU initialization failed, falling back to CPU-only mode");
+                    onTokenGenerated?.Invoke("[Warning: GPU initialization failed, falling back to CPU-only mode]");
+                    
+                    try
+                    {
+                        initialized = await _llamaSharpService.InitializeModelAsync(model.LocalPath, contextSize, 0);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error initializing model in CPU-only mode: {Message}", ex.Message);
+                        lastException = ex;
+                    }
+                }
+                
+                if (!initialized)
+                {
+                    string errorMessage = lastException != null 
+                        ? $"Error initializing model: {lastException.Message}" 
+                        : "Failed to initialize model for unknown reason";
+                    
+                    _logger.LogError(errorMessage);
+                    onTokenGenerated?.Invoke($"[Error: {errorMessage}]");
+                    return errorMessage;
+                }
+
+                return await _llamaSharpService.GenerateResponseAsync(prompt, onTokenGenerated);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during inference: {Message}", ex.Message);
+                onTokenGenerated?.Invoke($"[Error: {ex.Message}]");
+                return $"Error during inference: {ex.Message}";
             }
         }
 
@@ -334,12 +504,13 @@ namespace Nexi.Services
             string[] sizes = { "B", "KB", "MB", "GB", "TB" };
             double len = bytes;
             int order = 0;
+            
             while (len >= 1024 && order < sizes.Length - 1)
             {
                 order++;
                 len = len / 1024;
             }
-
+            
             return $"{len:0.##} {sizes[order]}";
         }
 
@@ -364,6 +535,22 @@ namespace Nexi.Services
             
             _logger.LogWarning($"No active download found for model {modelId}");
             return false;
+        }
+
+        // Implement the interface method
+        public async Task<bool> RunModelInferenceAsync(string id, string prompt, Action<string> onTokenGenerated)
+        {
+            if (string.IsNullOrEmpty(prompt))
+            {
+                _logger.LogWarning("Prompt is null or empty");
+                return false;
+            }
+            
+            // Call the new implementation and convert the result
+            string result = await RunInferenceAsync(id, prompt, onTokenGenerated);
+            
+            // Return true if the result doesn't start with "Error:"
+            return !result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

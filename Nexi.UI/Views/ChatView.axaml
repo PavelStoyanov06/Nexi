@@ -35,19 +35,19 @@
             <Border Padding="16"
                     CornerRadius="20,20,20,4"
                     BoxShadow="0 2 8 0 #30000000"
-                    Background="{CompiledBinding IsSystemMessage, Converter={StaticResource BoolToSystemMessageBackgroundConverter}, ConverterParameter={CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}}}"
+                    Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}}"
                     HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
                     MaxWidth="600">
               <StackPanel>
                 <TextBlock Text="{CompiledBinding Content}"
                          TextWrapping="Wrap"
                          FontSize="14"
-                         Foreground="{CompiledBinding IsSystemMessage, Converter={StaticResource BoolToSystemMessageForegroundConverter}, ConverterParameter={CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}}"/>
+                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
                 <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
                          FontSize="11"
                          Margin="0,8,0,0"
                          HorizontalAlignment="Right"
-                         Foreground="{CompiledBinding IsSystemMessage, Converter={StaticResource BoolToSystemMessageForegroundConverter}, ConverterParameter={CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}}"/>
+                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
               </StackPanel>
             </Border>
           </DataTemplate>

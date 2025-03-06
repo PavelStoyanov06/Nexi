@@ -2,10 +2,8 @@
 using System.IO;
 using Avalonia;
 using Avalonia.ReactiveUI;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Nexi.Data.Context;
 
 namespace Nexi.UI.Desktop
 {
@@ -23,10 +21,8 @@ namespace Nexi.UI.Desktop
                 .AddJsonFile("appsettings.json", optional: false)
                 .Build();
 
+            // The services are configured in App.axaml.cs
             var services = new ServiceCollection();
-
-            services.AddDbContext<NexiDbContext>(options =>
-                options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()

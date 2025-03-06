@@ -53,8 +53,12 @@ namespace Nexi.UI
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
             
-            // Register new services for LlamaSharp
-            services.AddSingleton<ILlamaSharpService, LlamaSharpService>();
+            // Register LlamaSharp service as a singleton with proper disposal
+            services.AddSingleton<ILlamaSharpService>(provider => {
+                var logger = provider.GetRequiredService<ILogger<LlamaSharpService>>();
+                return new LlamaSharpService(logger);
+            });
+            
             services.AddHttpClient();
 
             // Register ViewModels
@@ -104,54 +108,100 @@ namespace Nexi.UI
             AvaloniaXamlLoader.Load(this);
         }
 
-        public override async void OnFrameworkInitializationCompleted()
+        public override void OnFrameworkInitializationCompleted()
         {
-            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            // Set up global exception handling
+            AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
             {
-                // Set up global exception handling
-                AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+                var logger = Services.GetService(typeof(ILogger<App>)) as ILogger<App>;
+                var exception = args.ExceptionObject as Exception;
+                
+                if (exception is AccessViolationException)
                 {
-                    var logger = Services.GetRequiredService<ILogger<App>>();
-                    logger.LogError(e.ExceptionObject as Exception, "Unhandled exception in application");
+                    logger?.LogError(exception, "Unhandled AccessViolationException. This is likely due to a memory issue with the LlamaSharp native library.");
                     
-                    // We can't prevent the app from terminating in this event handler,
-                    // but we can log the error and perform cleanup
+                    // Try to clean up resources
                     try
                     {
-                        // Perform any necessary cleanup
-                        logger.LogInformation("Performing cleanup before application termination");
+                        var llamaService = Services.GetService(typeof(ILlamaSharpService)) as ILlamaSharpService;
+                        if (llamaService != null && llamaService is IDisposable disposable)
+                        {
+                            logger?.LogInformation("Attempting to dispose LlamaSharpService to recover from AccessViolationException");
+                            disposable.Dispose();
+                        }
+                        
+                        // Force garbage collection
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        GC.Collect();
                     }
-                    catch
+                    catch (Exception cleanupEx)
                     {
-                        // Suppress any exceptions in the exception handler
+                        logger?.LogError(cleanupEx, "Error during cleanup after AccessViolationException");
                     }
-                };
-                
-                // Also handle exceptions in the UI thread
-                Dispatcher.UIThread.UnhandledException += (sender, e) =>
+                }
+                else
                 {
-                    var logger = Services.GetRequiredService<ILogger<App>>();
-                    logger.LogError(e.Exception, "Unhandled exception in UI thread");
+                    logger?.LogError(exception, "Unhandled exception: {Message}", exception?.Message);
+                }
+            };
+            
+            // Also handle UI thread exceptions
+            Dispatcher.UIThread.UnhandledException += (sender, e) =>
+            {
+                var logger = Services.GetService(typeof(ILogger<App>)) as ILogger<App>;
+                
+                if (e.Exception is AccessViolationException)
+                {
+                    logger?.LogError(e.Exception, "Unhandled AccessViolationException in UI thread");
                     
-                    // Mark as handled to prevent app crash
-                    e.Handled = true;
-                };
-                
-                var mainViewModel = Services.GetRequiredService<MainViewModel>();
-                desktop.MainWindow = new MainWindow
+                    // Try to clean up resources
+                    try
+                    {
+                        var llamaService = Services.GetService(typeof(ILlamaSharpService)) as ILlamaSharpService;
+                        if (llamaService != null && llamaService is IDisposable disposable)
+                        {
+                            logger?.LogInformation("Attempting to dispose LlamaSharpService to recover from AccessViolationException");
+                            disposable.Dispose();
+                        }
+                        
+                        // Force garbage collection
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        GC.Collect();
+                        
+                        // Mark as handled to prevent app crash
+                        e.Handled = true;
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        logger?.LogError(cleanupEx, "Error during cleanup after AccessViolationException");
+                    }
+                }
+                else
                 {
-                    DataContext = mainViewModel
+                    logger?.LogError(e.Exception, "Unhandled exception in UI thread: {Message}", e.Exception?.Message);
+                    e.Handled = true;
+                }
+            };
+
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                // Create the main window
+                var mainWindow = new MainWindow
+                {
+                    DataContext = Services.GetRequiredService<MainViewModel>(),
                 };
+
+                desktop.MainWindow = mainWindow;
 
                 // Ensure database is created
-                using (var scope = Services.CreateScope())
-                {
-                    var dbContext = scope.ServiceProvider.GetRequiredService<NexiDbContext>();
-                    await dbContext.Database.EnsureCreatedAsync();
-                }
+                using var scope = Services.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<NexiDbContext>();
+                dbContext.Database.EnsureCreated();
 
-                // Load and apply user settings on startup
-                await LoadAndApplyUserSettingsAsync();
+                // Load user settings on startup
+                _ = LoadAndApplyUserSettingsAsync();
             }
 
             base.OnFrameworkInitializationCompleted();

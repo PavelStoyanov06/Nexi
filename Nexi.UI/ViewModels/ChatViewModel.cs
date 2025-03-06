@@ -1,16 +1,17 @@
-﻿using ReactiveUI;
+﻿using Avalonia.Threading;
+using Microsoft.Extensions.Logging;
+using Nexi.Data.Models;
+using Nexi.Services.Interfaces;
+using Nexi.UI.Models;
+using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Windows.Input;
-using Nexi.Services.Interfaces;
-using Nexi.UI.Models;
-using Avalonia.Threading;
-using System.Threading.Tasks;
-using Nexi.Data.Models;
-using Microsoft.Extensions.Logging;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using System.Collections.Specialized;
 
 namespace Nexi.UI.ViewModels
 {
@@ -30,6 +31,9 @@ namespace Nexi.UI.ViewModels
         private string _sessionId;
         private string _title;
         private string? _selectedModelId;
+
+        // Event that the view can subscribe to for scrolling to bottom
+        public event Action? ScrollToBottom;
 
         public ChatViewModel(
             ICommandProcessor commandProcessor,
@@ -234,51 +238,45 @@ namespace Nexi.UI.ViewModels
 
         private async Task SendMessageAsync()
         {
-            if (string.IsNullOrWhiteSpace(CurrentMessage) || IsProcessing)
+            if (string.IsNullOrWhiteSpace(CurrentMessage))
                 return;
+                
+            await SendMessageAsync(CurrentMessage.Trim());
+            CurrentMessage = string.Empty;
+        }
+
+        private async Task SendMessageAsync(string userMessage)
+        {
+            if (string.IsNullOrWhiteSpace(userMessage))
+            {
+                return;
+            }
 
             try
             {
+                // Set processing state
                 IsProcessing = true;
-
-                // Get the user's message
-                var userMessage = CurrentMessage.Trim();
-                CurrentMessage = string.Empty;
 
                 // Add user message to the chat
                 var userChatMessage = new ChatMessage
                 {
                     Content = userMessage,
-                    IsUser = true,
-                    Timestamp = DateTime.Now
+                    Timestamp = DateTime.Now,
+                    IsUser = true
                 };
-                Messages.Add(userChatMessage);
+                
+                await AddMessageAsync(userChatMessage);
 
-                // Save the message to storage
-                await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                // Check if we have a selected model
+                if (string.IsNullOrEmpty(SelectedModelId))
                 {
-                    Content = userMessage,
-                    IsUser = true,
-                    Timestamp = DateTime.Now
-                });
-
-                // Get settings to check if a model is selected
-                var settings = await _userSettingsService.GetSettingsAsync();
-                if (string.IsNullOrEmpty(settings.SelectedModelId))
-                {
-                    // No model selected, show error message
-                    var errorMessage = new ChatMessage
+                    _logger.LogWarning("No model selected for inference");
+                    await AddMessageAsync(new ChatMessage
                     {
-                        Content = "No AI model is selected. Please go to the Models page to download and select a model.",
+                        Content = "Please select an AI model in the Settings before sending messages.",
+                        Timestamp = DateTime.Now,
                         IsUser = false,
-                        Timestamp = DateTime.Now
-                    };
-                    Messages.Add(errorMessage);
-                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                    {
-                        Content = "No AI model is selected. Please go to the Models page to download and select a model.",
-                        IsUser = false,
-                        Timestamp = DateTime.Now
+                        IsSystemMessage = true
                     });
                     return;
                 }
@@ -286,77 +284,171 @@ namespace Nexi.UI.ViewModels
                 // Create a placeholder for the assistant's response
                 var assistantMessage = new ChatMessage
                 {
-                    Content = "",
-                    IsUser = false,
-                    Timestamp = DateTime.Now
+                    Content = "Thinking...",
+                    Timestamp = DateTime.Now,
+                    IsUser = false
                 };
-                Messages.Add(assistantMessage);
-
-                // Process with LlamaSharp
-                var responseBuilder = new StringBuilder();
                 
-                // Create a token handler that updates the UI
-                Action<string> onTokenGenerated = (token) =>
+                await AddMessageAsync(assistantMessage);
+
+                // Check if the model is initialized
+                bool isInitialized = await _llamaSharpService.IsModelInitializedAsync();
+                if (!isInitialized)
                 {
-                    responseBuilder.Append(token);
+                    _logger.LogInformation("Model not initialized, initializing now");
                     
-                    // Update the message on the UI thread
-                    Dispatcher.UIThread.Post(() =>
+                    // Get the model path
+                    string modelPath = await _aiModelService.GetModelLocalPathAsync(SelectedModelId);
+                    
+                    // Get user settings for context size and GPU layers
+                    var settings = await _userSettingsService.GetSettingsAsync();
+                    int contextSize = settings.ContextSize;
+                    int gpuLayerCount = settings.UseGPU ? settings.GpuLayerCount : 0;
+                    
+                    // Initialize the model
+                    bool initialized = await _llamaSharpService.InitializeModelAsync(modelPath, contextSize, gpuLayerCount);
+                    if (!initialized)
                     {
-                        assistantMessage.Content = responseBuilder.ToString();
-                        this.RaisePropertyChanged(nameof(Messages));
-                    });
-                };
-
-                // Run the inference
-                var success = await _aiModelService.RunModelInferenceAsync(
-                    settings.SelectedModelId,
-                    userMessage,
-                    onTokenGenerated);
-
-                if (!success)
-                {
-                    // If inference failed, update the message
-                    assistantMessage.Content = "Sorry, I encountered an error processing your request. Please try again or check if the model is properly loaded.";
+                        _logger.LogError("Failed to initialize model");
+                        assistantMessage.Content = "Error: Failed to initialize the AI model. Please try again or select a different model.";
+                        
+                        // Force UI update
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            this.RaisePropertyChanged(nameof(Messages));
+                            ScrollToBottom?.Invoke();
+                        });
+                        return;
+                    }
                 }
 
-                // Save the assistant's message
-                await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                // Use the LlamaSharpService directly for streaming responses
+                try
                 {
-                    Content = responseBuilder.ToString(),
-                    IsUser = false,
-                    Timestamp = DateTime.Now
-                });
-
-                // Update the title if this is a new chat
-                if (Messages.Count <= 3 && _title == "New Chat")
-                {
-                    _title = GenerateTitleFromMessages();
-                    var session = await _chatStorage.GetSessionAsync(_sessionId);
-                    if (session != null)
+                    _logger.LogInformation("Starting chat with message: {Message}", userMessage);
+                    
+                    // Get the streaming response
+                    var responseStream = await _llamaSharpService.ChatAsync(userMessage);
+                    
+                    // Process the tokens as they arrive
+                    StringBuilder responseBuilder = new StringBuilder();
+                    int tokenCount = 0;
+                    
+                    await foreach (var token in responseStream)
                     {
-                        session.Title = _title;
-                        await _chatStorage.SaveSessionAsync(session);
-                        this.RaisePropertyChanged(nameof(Title));
+                        tokenCount++;
+                        
+                        // Append the token to our response
+                        responseBuilder.Append(token);
+                        
+                        // Update the UI with the current response immediately
+                        assistantMessage.Content = responseBuilder.ToString();
+                        
+                        // Force UI update on the UI thread for every token
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            // Explicitly raise property changed for the Messages collection
+                            this.RaisePropertyChanged(nameof(Messages));
+                            
+                            // Also raise property changed for the specific message
+                            int index = Messages.IndexOf(assistantMessage);
+                            if (index >= 0)
+                            {
+                                // Create a temporary copy of the message
+                                var updatedMessage = new ChatMessage
+                                {
+                                    Content = assistantMessage.Content,
+                                    Timestamp = assistantMessage.Timestamp,
+                                    IsUser = assistantMessage.IsUser,
+                                    IsSystemMessage = assistantMessage.IsSystemMessage
+                                };
+                                
+                                // Replace the message in the collection
+                                Messages[index] = updatedMessage;
+                                
+                                // Update our reference
+                                assistantMessage = updatedMessage;
+                            }
+                            
+                            // Scroll to bottom to show the latest content
+                            ScrollToBottom?.Invoke();
+                        });
+                        
+                        // Log every 10 tokens for debugging
+                        if (tokenCount % 10 == 0)
+                        {
+                            _logger.LogDebug("Received {Count} tokens. Current response: {Response}", 
+                                tokenCount, responseBuilder.ToString());
+                        }
                     }
+                    
+                    _logger.LogInformation("Chat completed. Total tokens: {Count}", tokenCount);
+                    
+                    // Final update to ensure content is set
+                    if (tokenCount > 0)
+                    {
+                        assistantMessage.Content = responseBuilder.ToString();
+                        
+                        // Force UI update
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            this.RaisePropertyChanged(nameof(Messages));
+                            ScrollToBottom?.Invoke();
+                        });
+                        
+                        // Save the assistant message to storage
+                        await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                        {
+                            Content = assistantMessage.Content,
+                            IsUser = false,
+                            Timestamp = DateTime.Now
+                        });
+
+                        // Update the chat title if this is a new chat
+                        if (Messages.Count <= 2 && Title == "New Chat")
+                        {
+                            var newTitle = GenerateTitleFromMessages();
+                            await UpdateSessionTitleAsync(_sessionId, newTitle);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("No tokens were generated in the response");
+                        assistantMessage.Content = "No response was generated. Please try again.";
+                        
+                        // Force UI update
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            this.RaisePropertyChanged(nameof(Messages));
+                            ScrollToBottom?.Invoke();
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during chat: {ErrorMessage}", ex.Message);
+                    
+                    // Update the assistant message with the error
+                    assistantMessage.Content = $"Error: {ex.Message}";
+                    
+                    // Force UI update
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        this.RaisePropertyChanged(nameof(Messages));
+                        ScrollToBottom?.Invoke();
+                    });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending message");
+                _logger.LogError(ex, "Error in SendMessageAsync: {ErrorMessage}", ex.Message);
                 
-                // Add error message to chat
-                var errorMessage = new ChatMessage
+                // Add error message to the chat
+                await AddMessageAsync(new ChatMessage
                 {
-                    Content = $"An error occurred: {ex.Message}",
+                    Content = $"Error: {ex.Message}",
                     IsUser = false,
-                    Timestamp = DateTime.Now
-                };
-                Messages.Add(errorMessage);
-                await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                {
-                    Content = $"An error occurred: {ex.Message}",
-                    IsUser = false,
+                    IsSystemMessage = true,
                     Timestamp = DateTime.Now
                 });
             }
@@ -600,6 +692,59 @@ namespace Nexi.UI.ViewModels
             }
             
             return firstUserMessage;
+        }
+
+        private async Task ProcessCommandAsync(string command)
+        {
+            // Trim the command and remove the leading slash
+            command = command.Trim();
+            if (command.StartsWith("/"))
+            {
+                command = command.Substring(1);
+            }
+
+            // Add the command to the chat
+            var userMessage = new ChatMessage
+            {
+                Content = "/" + command,
+                IsUser = true,
+                Timestamp = DateTime.Now
+            };
+            Messages.Add(userMessage);
+
+            // Clear the input
+            CurrentMessage = string.Empty;
+
+            // Process the command
+            var result = _commandProcessor.ProcessCommand(command);
+
+            // Add the result to the chat
+            var responseMessage = new ChatMessage
+            {
+                Content = result,
+                IsUser = false,
+                IsSystemMessage = true,
+                Timestamp = DateTime.Now
+            };
+            Messages.Add(responseMessage);
+
+            // Save the command and response to storage
+            await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+            {
+                Content = "/" + command,
+                IsUser = true,
+                Timestamp = DateTime.Now
+            });
+
+            await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+            {
+                Content = result,
+                IsUser = false,
+                Timestamp = DateTime.Now
+            });
+
+            // Scroll to bottom
+            ScrollToBottom?.Invoke();
         }
 
         public override void Dispose()
