@@ -51,7 +51,7 @@
                     Classes="chat-item"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Stretch">
-              <Grid ColumnDefinitions="Auto,*,Auto"
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto"
                     Margin="20,12">
                 <!-- Icon -->
                 <Border Grid.Column="0"
@@ -77,8 +77,19 @@
                            TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
 
+                <!-- Delete Button -->
+                <Button Grid.Column="2"
+                        Classes="delete-button"
+                        Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).DeleteChatCommand}"
+                        CommandParameter="{CompiledBinding Id}"
+                        ToolTip.Tip="Delete chat">
+                  <material:MaterialIcon Kind="Delete"
+                                       Width="16"
+                                       Height="16"/>
+                </Button>
+
                 <!-- Timestamp -->
-                <StackPanel Grid.Column="2"
+                <StackPanel Grid.Column="3"
                           Margin="12,0,0,0"
                           HorizontalAlignment="Right">
                   <TextBlock Text="{CompiledBinding LastMessageTime, StringFormat=\{0:t\}}"
@@ -126,6 +137,29 @@
 
     <Style Selector="Button.accent-button:pointerover">
       <Setter Property="RenderTransform" Value="scale(1.1)"/>
+    </Style>
+    
+    <Style Selector="Button.delete-button">
+      <Setter Property="Width" Value="32"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#888888"/>
+      <Setter Property="Opacity" Value="0.7"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
+          <BrushTransition Property="Foreground" Duration="0:0:0.2"/>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    
+    <Style Selector="Button.delete-button:pointerover">
+      <Setter Property="Background" Value="#FFE0E0"/>
+      <Setter Property="Foreground" Value="#E74C3C"/>
+      <Setter Property="Opacity" Value="1.0"/>
     </Style>
   </UserControl.Styles>
 </UserControl>

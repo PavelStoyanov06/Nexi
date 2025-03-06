@@ -22,12 +22,12 @@
             BoxShadow="0 2 8 0 #30000000">
       <Grid ColumnDefinitions="*,Auto" Margin="32,24">
         <StackPanel Grid.Column="0" Spacing="8">
-          <TextBlock Text="GGUF Models"
+          <TextBlock Text="Models"
                    FontFamily="Cascadia Code"
                    FontSize="32"
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource SystemAccentColor}"/>
-          <TextBlock Text="Download and manage GGUF models for LlamaSharp"
+          <TextBlock Text="Download and manage AI models for Nexi"
                    FontSize="16"
                    Opacity="0.7"/>
         </StackPanel>

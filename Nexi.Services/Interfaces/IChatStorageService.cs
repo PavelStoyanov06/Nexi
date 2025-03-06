@@ -9,6 +9,7 @@ namespace Nexi.Services.Interfaces
         Task<ChatSession> CreateSessionAsync(string title);
         Task<ChatSession?> GetSessionAsync(string id);
         Task<IEnumerable<ChatSession>> GetAllSessionsAsync();
+        Task<IEnumerable<ChatSession>> GetSessionsWithoutMessagesAsync();
         Task<IEnumerable<ChatSession>> SearchSessionsAsync(string query);
         Task SaveSessionAsync(ChatSession session);
         Task DeleteSessionAsync(string id);

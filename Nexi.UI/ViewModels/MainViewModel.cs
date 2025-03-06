@@ -196,6 +196,20 @@ namespace Nexi.UI.ViewModels
             // Refresh the selected model before creating a new chat
             await RefreshSelectedModelAsync();
             
+            // Create a new session in the database
+            string sessionId;
+            try
+            {
+                var session = await _chatStorage.CreateSessionAsync("New Chat");
+                sessionId = session.Id;
+                _logger.LogInformation($"Created new chat session with ID: {sessionId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating new chat session");
+                sessionId = Guid.NewGuid().ToString();
+            }
+            
             // Make sure parameters are in the correct order
             _currentChatViewModel = new ChatViewModel(
                 _commandProcessor,
@@ -204,7 +218,9 @@ namespace Nexi.UI.ViewModels
                 _aiModelService,
                 _userSettingsService,
                 _llamaSharpService,
-                _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>()
+                _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>(),
+                sessionId,
+                false // Don't create a new session in the constructor
             );
             
             // Set the selected model
@@ -217,6 +233,9 @@ namespace Nexi.UI.ViewModels
             {
                 _logger.LogWarning("No selected model available for new chat");
             }
+            
+            // Add welcome message
+            await _currentChatViewModel.AddWelcomeMessageAsync();
             
             CurrentPage = _currentChatViewModel;
         }

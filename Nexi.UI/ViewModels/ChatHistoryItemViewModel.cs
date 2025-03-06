@@ -17,11 +17,22 @@ namespace Nexi.UI.ViewModels
         {
             Id = session.Id;
             Title = session.Title;
-            var lastMessage = session.Messages.LastOrDefault();
-            LastMessage = lastMessage?.Content ?? string.Empty;
-            LastMessageTime = lastMessage?.Timestamp ?? session.LastModifiedAt;
+            
+            // Handle case where messages might not be loaded
+            if (session.Messages != null && session.Messages.Any())
+            {
+                var lastMessage = session.Messages.OrderByDescending(m => m.Timestamp).FirstOrDefault();
+                LastMessage = lastMessage?.Content ?? string.Empty;
+                LastMessageTime = lastMessage?.Timestamp ?? session.LastModifiedAt;
+            }
+            else
+            {
+                LastMessage = string.Empty;
+                LastMessageTime = session.LastModifiedAt;
+            }
+            
             LastMessageDate = LastMessageTime.Date;
-            MessageCount = session.Messages.Count;
+            MessageCount = session.Messages?.Count ?? 0;
         }
     }
 }

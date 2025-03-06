@@ -197,13 +197,20 @@ namespace Nexi.UI.ViewModels
         {
             try
             {
-                // Set model as downloading
-                model.IsDownloading = true;
-                model.IsDownloaded = false;
-                model.Status = "Downloading...";
-                model.Progress = 0;
-                model.ProgressText = "0%";
-                model.StatusBrush = new SolidColorBrush(Color.Parse("#3498db"));
+                // Set model as downloading on the UI thread
+                Dispatcher.UIThread.Post(() =>
+                {
+                    model.IsDownloading = true;
+                    model.IsDownloaded = false;
+                    model.Status = "Downloading...";
+                    model.Progress = 0;
+                    model.ProgressText = "0%";
+                    model.StatusBrush = new SolidColorBrush(Color.Parse("#3498db"));
+                    
+                    // Force property change notification
+                    model.RaisePropertyChanged(nameof(model.IsDownloading));
+                    model.RaisePropertyChanged(nameof(model.CanDownload));
+                });
 
                 // Create a progress reporter
                 var progress = new Progress<(string, int)>(update =>
@@ -217,6 +224,9 @@ namespace Nexi.UI.ViewModels
                         model.Status = $"Downloading... {percent}%";
                         model.ProgressText = $"{percent}%";
                         _logger.LogDebug($"Download progress for {model.Name}: {percent}%");
+                        
+                        // Force property change notification
+                        model.RaisePropertyChanged(nameof(model.IsDownloading));
                     });
                 });
 
@@ -224,13 +234,20 @@ namespace Nexi.UI.ViewModels
                 _logger.LogInformation($"Starting download of {model.Name} from {model.DownloadUrl}");
                 await _aiModelService.DownloadGgufModelAsync(model.Id, model.DownloadUrl, progress);
 
-                // Update status
-                model.IsDownloading = false;
-                model.IsDownloaded = true;
-                model.Status = "Downloaded";
-                model.Progress = 100;
-                model.ProgressText = "100%";
-                model.StatusBrush = new SolidColorBrush(Color.Parse("#2ecc71"));
+                // Update status on UI thread
+                Dispatcher.UIThread.Post(() =>
+                {
+                    model.IsDownloading = false;
+                    model.IsDownloaded = true;
+                    model.Status = "Downloaded";
+                    model.Progress = 100;
+                    model.ProgressText = "100%";
+                    model.StatusBrush = new SolidColorBrush(Color.Parse("#2ecc71"));
+                    
+                    // Force property change notification
+                    model.RaisePropertyChanged(nameof(model.IsDownloading));
+                    model.RaisePropertyChanged(nameof(model.CanDownload));
+                });
 
                 StatusMessage = $"Successfully downloaded {model.Name}";
                 _logger.LogInformation($"Successfully downloaded {model.Name}");
@@ -243,11 +260,18 @@ namespace Nexi.UI.ViewModels
                 _logger.LogError(ex, $"Error downloading model {model.Name}");
                 ErrorMessage = $"Error downloading model: {ex.Message}";
                 
-                // Reset model status
-                model.IsDownloading = false;
-                model.IsDownloaded = false;
-                model.Status = "Download Failed";
-                model.StatusBrush = new SolidColorBrush(Color.Parse("#e74c3c"));
+                // Reset model status on UI thread
+                Dispatcher.UIThread.Post(() =>
+                {
+                    model.IsDownloading = false;
+                    model.IsDownloaded = false;
+                    model.Status = "Download Failed";
+                    model.StatusBrush = new SolidColorBrush(Color.Parse("#e74c3c"));
+                    
+                    // Force property change notification
+                    model.RaisePropertyChanged(nameof(model.IsDownloading));
+                    model.RaisePropertyChanged(nameof(model.CanDownload));
+                });
             }
         }
 

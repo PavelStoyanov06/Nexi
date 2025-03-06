@@ -43,7 +43,8 @@ namespace Nexi.UI.ViewModels
             IUserSettingsService userSettingsService,
             ILlamaSharpService llamaSharpService,
             ILogger<ChatViewModel> logger,
-            string? sessionId = null)
+            string? sessionId = null,
+            bool createNewSession = true)
         {
             _commandProcessor = commandProcessor;
             _voiceService = voiceService;
@@ -60,32 +61,22 @@ namespace Nexi.UI.ViewModels
             SendMessageCommand = ReactiveCommand.CreateFromTask(SendMessageAsync, this.WhenAnyValue(x => x.HasMessageText));
             ClearMessageCommand = ReactiveCommand.Create(() => CurrentMessage = string.Empty);
 
-            // Load chat history if session ID is provided
-            if (!string.IsNullOrEmpty(sessionId))
-            {
-                _ = LoadChatHistoryAsync(sessionId);
-            }
-
             // Load the selected model from user settings
             _ = LoadSelectedModelAsync();
 
             // Set up voice recognition if enabled
             _voiceService.SpeechRecognized += OnSpeechRecognized;
 
-            if (sessionId == null)
-            {
-                // Add welcome message
-                _ = AddMessageAsync(new ChatMessage
-                {
-                    Content = "Hello! I'm Nexi. You can type 'help' to see available commands, or use the microphone button for voice commands.",
-                    Timestamp = DateTime.Now,
-                    IsUser = false
-                });
-            }
-            else
+            // Either load existing chat history or add welcome message for new chats
+            if (!string.IsNullOrEmpty(sessionId))
             {
                 // Load existing chat
                 _ = LoadChatHistoryAsync(sessionId);
+            }
+            else if (createNewSession)
+            {
+                // Add welcome message for new chats
+                _ = AddWelcomeMessageAsync();
             }
 
             // Subscribe to voice mode changes
@@ -580,9 +571,9 @@ namespace Nexi.UI.ViewModels
                 var session = await _chatStorage.GetSessionAsync(_sessionId);
                 if (session == null)
                 {
-                    // Create new session
-                    session = await _chatStorage.CreateSessionAsync(Title);
-                    _sessionId = session.Id;
+                    // Only create a new session if we're explicitly told to
+                    _logger.LogWarning($"Session {_sessionId} not found. This should not happen with the new flow.");
+                    return;
                 }
 
                 await _chatStorage.AddMessageAsync(_sessionId, messageData);
@@ -745,6 +736,17 @@ namespace Nexi.UI.ViewModels
 
             // Scroll to bottom
             ScrollToBottom?.Invoke();
+        }
+
+        // Method to add welcome message for new chats
+        public async Task AddWelcomeMessageAsync()
+        {
+            await AddMessageAsync(new ChatMessage
+            {
+                Content = "Hello! I'm Nexi. You can type 'help' to see available commands, or use the microphone button for voice commands.",
+                Timestamp = DateTime.Now,
+                IsUser = false
+            });
         }
 
         public override void Dispose()

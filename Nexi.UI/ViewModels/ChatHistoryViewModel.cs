@@ -10,6 +10,7 @@ using System.Reactive.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Nexi.UI.ViewModels
 {
@@ -25,6 +26,10 @@ namespace Nexi.UI.ViewModels
         private ObservableCollection<ChatHistoryItemViewModel> _chats;
         private readonly ObservableAsPropertyHelper<ObservableCollection<ChatHistoryItemViewModel>> _filteredChats;
         private bool _isLoading;
+        
+        // Add a semaphore to prevent concurrent operations
+        private readonly SemaphoreSlim _operationSemaphore = new SemaphoreSlim(1, 1);
+        private bool _isRefreshing = false;
 
         public ChatHistoryViewModel(
             IChatStorageService storageService,
@@ -47,19 +52,26 @@ namespace Nexi.UI.ViewModels
             OpenChatCommand = ReactiveCommand.CreateFromTask<string>(OpenChatAsync);
             DeleteChatCommand = ReactiveCommand.CreateFromTask<string>(DeleteChatAsync);
 
-            // Setup filtered chats
+            // Setup filtered chats with better handling of collection changes
             _filteredChats = this.WhenAnyValue(x => x.SearchQuery)
                 .Throttle(TimeSpan.FromMilliseconds(300))
-                .Select(query => new ObservableCollection<ChatHistoryItemViewModel>(
-                    _chats.Where(c =>
-                        string.IsNullOrWhiteSpace(query) ||
-                        c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                        c.LastMessage.Contains(query, StringComparison.OrdinalIgnoreCase))
-                ))
+                .Select(query => FilterChats(query))
                 .ToProperty(this, x => x.FilteredChats);
 
             // Load initial data
             _ = LoadHistoryAsync();
+        }
+
+        private ObservableCollection<ChatHistoryItemViewModel> FilterChats(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return new ObservableCollection<ChatHistoryItemViewModel>(_chats);
+                
+            return new ObservableCollection<ChatHistoryItemViewModel>(
+                _chats.Where(c =>
+                    c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    c.LastMessage.Contains(query, StringComparison.OrdinalIgnoreCase))
+            );
         }
 
         public string SearchQuery
@@ -87,17 +99,51 @@ namespace Nexi.UI.ViewModels
 
         private async Task LoadHistoryAsync()
         {
+            // Prevent concurrent refreshes
+            if (_isRefreshing)
+                return;
+                
             try
             {
+                await _operationSemaphore.WaitAsync();
+                _isRefreshing = true;
                 IsLoading = true;
-                var sessions = await _storageService.GetAllSessionsAsync();
+                
+                // Set a reasonable limit for initial load
+                const int pageSize = 20;
+                
+                // Get only the most recent sessions with limited data
+                var sessions = await _storageService.GetSessionsWithoutMessagesAsync();
+                var orderedSessions = sessions
+                    .OrderByDescending(s => s.LastModifiedAt)
+                    .Take(pageSize)
+                    .ToList();
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _chats.Clear();
-                    foreach (var session in sessions.OrderByDescending(s => s.LastModifiedAt))
+                    try
                     {
-                        _chats.Add(new ChatHistoryItemViewModel(session));
+                        // Create a new collection to avoid modification issues
+                        var newChats = new List<ChatHistoryItemViewModel>(orderedSessions.Count);
+                        
+                        foreach (var session in orderedSessions)
+                        {
+                            newChats.Add(new ChatHistoryItemViewModel(session));
+                        }
+                        
+                        // Clear and repopulate in one batch to minimize UI updates
+                        _chats.Clear();
+                        foreach (var chat in newChats)
+                        {
+                            _chats.Add(chat);
+                        }
+                        
+                        // Force property change notification
+                        this.RaisePropertyChanged(nameof(FilteredChats));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error updating chat history UI");
                     }
                 });
             }
@@ -108,6 +154,8 @@ namespace Nexi.UI.ViewModels
             finally
             {
                 IsLoading = false;
+                _isRefreshing = false;
+                _operationSemaphore.Release();
             }
         }
 
@@ -115,6 +163,8 @@ namespace Nexi.UI.ViewModels
         {
             try
             {
+                await _operationSemaphore.WaitAsync();
+                
                 var session = await _storageService.GetSessionAsync(chatId);
                 if (session != null)
                 {
@@ -131,7 +181,8 @@ namespace Nexi.UI.ViewModels
                         userSettingsService,
                         llamaSharpService,
                         _chatViewModelLogger,
-                        chatId);
+                        chatId,
+                        false); // Don't create a new session in the constructor
 
                     _mainViewModel.CurrentPage = chatViewModel;
                 }
@@ -140,19 +191,56 @@ namespace Nexi.UI.ViewModels
             {
                 _logger.LogError(ex, "Error opening chat {ChatId}", chatId);
             }
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         private async Task DeleteChatAsync(string chatId)
         {
             try
             {
+                await _operationSemaphore.WaitAsync();
+                
+                // Delete the chat from storage
                 await _storageService.DeleteSessionAsync(chatId);
-                await LoadHistoryAsync();
+                
+                // Update UI on the UI thread
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        // Find and remove the chat from the collection
+                        var chatToRemove = _chats.FirstOrDefault(c => c.Id == chatId);
+                        if (chatToRemove != null)
+                        {
+                            _chats.Remove(chatToRemove);
+                            
+                            // Force property change notification
+                            this.RaisePropertyChanged(nameof(FilteredChats));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error updating UI after chat deletion");
+                    }
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting chat {ChatId}", chatId);
             }
+            finally
+            {
+                _operationSemaphore.Release();
+            }
+        }
+        
+        public override void Dispose()
+        {
+            _operationSemaphore.Dispose();
+            base.Dispose();
         }
     }
 }
