@@ -24,7 +24,7 @@ namespace Nexi.UI.ViewModels
         private readonly ILogger<ChatViewModel> _chatViewModelLogger;
         private string _searchQuery = string.Empty;
         private ObservableCollection<ChatHistoryItemViewModel> _chats;
-        private readonly ObservableAsPropertyHelper<ObservableCollection<ChatHistoryItemViewModel>> _filteredChats;
+        private ObservableCollection<ChatHistoryItemViewModel> _filteredChats;
         private bool _isLoading;
         
         // Add a semaphore to prevent concurrent operations
@@ -46,6 +46,7 @@ namespace Nexi.UI.ViewModels
             _mainViewModel = mainViewModel;
             _chatViewModelLogger = chatViewModelLogger;
             _chats = new ObservableCollection<ChatHistoryItemViewModel>();
+            _filteredChats = new ObservableCollection<ChatHistoryItemViewModel>();
 
             // Initialize commands
             ClearSearchCommand = ReactiveCommand.Create(ClearSearch);
@@ -53,25 +54,31 @@ namespace Nexi.UI.ViewModels
             DeleteChatCommand = ReactiveCommand.CreateFromTask<string>(DeleteChatAsync);
 
             // Setup filtered chats with better handling of collection changes
-            _filteredChats = this.WhenAnyValue(x => x.SearchQuery)
+            this.WhenAnyValue(x => x.SearchQuery)
                 .Throttle(TimeSpan.FromMilliseconds(300))
-                .Select(query => FilterChats(query))
-                .ToProperty(this, x => x.FilteredChats);
+                .Subscribe(query => UpdateFilteredChats(query));
 
             // Load initial data
             _ = LoadHistoryAsync();
         }
 
-        private ObservableCollection<ChatHistoryItemViewModel> FilterChats(string query)
+        private void UpdateFilteredChats(string query)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return new ObservableCollection<ChatHistoryItemViewModel>(_chats);
-                
-            return new ObservableCollection<ChatHistoryItemViewModel>(
-                _chats.Where(c =>
+            var filtered = string.IsNullOrWhiteSpace(query)
+                ? _chats.ToList()
+                : _chats.Where(c =>
                     c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    c.LastMessage.Contains(query, StringComparison.OrdinalIgnoreCase))
-            );
+                    c.LastMessage.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+                
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _filteredChats.Clear();
+                foreach (var chat in filtered)
+                {
+                    _filteredChats.Add(chat);
+                }
+                this.RaisePropertyChanged(nameof(FilteredChats));
+            });
         }
 
         public string SearchQuery
@@ -80,7 +87,10 @@ namespace Nexi.UI.ViewModels
             set => this.RaiseAndSetIfChanged(ref _searchQuery, value);
         }
 
-        public ObservableCollection<ChatHistoryItemViewModel> FilteredChats => _filteredChats.Value;
+        public ObservableCollection<ChatHistoryItemViewModel> FilteredChats 
+        { 
+            get => _filteredChats;
+        }
 
         public bool IsLoading
         {
@@ -133,9 +143,12 @@ namespace Nexi.UI.ViewModels
                         
                         // Clear and repopulate in one batch to minimize UI updates
                         _chats.Clear();
+                        _filteredChats.Clear();
+                        
                         foreach (var chat in newChats)
                         {
                             _chats.Add(chat);
+                            _filteredChats.Add(chat);
                         }
                         
                         // Force property change notification
@@ -213,15 +226,22 @@ namespace Nexi.UI.ViewModels
                 {
                     try
                     {
-                        // Find and remove the chat from the collection
+                        // Find and remove the chat from the main collection
                         var chatToRemove = _chats.FirstOrDefault(c => c.Id == chatId);
                         if (chatToRemove != null)
                         {
                             _chats.Remove(chatToRemove);
-                            
-                            // Force property change notification
-                            this.RaisePropertyChanged(nameof(FilteredChats));
                         }
+                        
+                        // Also remove from filtered collection
+                        var filteredChatToRemove = _filteredChats.FirstOrDefault(c => c.Id == chatId);
+                        if (filteredChatToRemove != null)
+                        {
+                            _filteredChats.Remove(filteredChatToRemove);
+                        }
+                        
+                        // Force property change notification
+                        this.RaisePropertyChanged(nameof(FilteredChats));
                     }
                     catch (Exception ex)
                     {

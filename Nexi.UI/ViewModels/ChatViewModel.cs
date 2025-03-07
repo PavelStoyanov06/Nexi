@@ -400,7 +400,7 @@ namespace Nexi.UI.ViewModels
                 // Then check if we should use AI model
                 else if (!string.IsNullOrEmpty(SelectedModelId) && await _aiModelService.IsModelDownloadedAsync(SelectedModelId))
                 {
-                    // Create a response message placeholder
+                    // Create a response message placeholder that will be updated in real-time
                     var responseMessage = new ChatMessage
                     {
                         Content = "Thinking...",
@@ -408,6 +408,7 @@ namespace Nexi.UI.ViewModels
                         IsUser = false
                     };
                     
+                    // Add the placeholder message to the chat
                     await AddMessageAsync(responseMessage);
                     
                     // Use the AI model for generating a response
@@ -425,23 +426,32 @@ namespace Nexi.UI.ViewModels
                             {
                                 // Clean up the response as it's being generated
                                 responseMessage.Content = CleanupAIResponse(generatedText);
+                                
+                                // Force UI update
                                 this.RaisePropertyChanged(nameof(Messages));
+                                
+                                // Trigger scroll to bottom to follow the generating text
+                                ScrollToBottom?.Invoke();
                             });
                         });
                     
-                    // Remove the placeholder message
-                    Messages.Remove(responseMessage);
-                    
-                    // Clean up the final response
+                    // Update the final response with cleaned text
                     string cleanedResponse = CleanupAIResponse(generatedText);
+                    responseMessage.Content = cleanedResponse;
                     
-                    // Add the final response
-                    await AddMessageAsync(new ChatMessage
+                    // Force UI update for the final response
+                    this.RaisePropertyChanged(nameof(Messages));
+                    
+                    // Save the message to storage
+                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
                     {
                         Content = cleanedResponse,
-                        Timestamp = DateTime.Now,
-                        IsUser = false
+                        IsUser = false,
+                        Timestamp = responseMessage.Timestamp
                     });
+                    
+                    // Remember this message for potential document creation
+                    _lastUsedAiMessage = responseMessage;
                 }
                 else
                 {
@@ -452,13 +462,30 @@ namespace Nexi.UI.ViewModels
                     {
                         Content = response,
                         Timestamp = DateTime.Now,
-                        IsUser = false
+                        IsUser = false,
+                        IsSystemMessage = true
                     });
                 }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing input: {Message}", ex.Message);
+                
+                // Add error message to chat
+                await AddMessageAsync(new ChatMessage
+                {
+                    Content = "Sorry, I encountered an error processing your request. Please try again.",
+                    Timestamp = DateTime.Now,
+                    IsUser = false,
+                    IsSystemMessage = true
+                });
             }
             finally
             {
                 IsProcessing = false;
+                
+                // Ensure we scroll to the bottom after processing
+                ScrollToBottom?.Invoke();
             }
         }
 

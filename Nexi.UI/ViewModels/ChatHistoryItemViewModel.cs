@@ -16,7 +16,30 @@ namespace Nexi.UI.ViewModels
         public ChatHistoryItemViewModel(ChatSession session)
         {
             Id = session.Id;
-            Title = session.Title;
+            
+            // Use the session title, but if it's "New Chat" and we have messages,
+            // try to derive a better title from the first user message
+            if (session.Title == "New Chat" && session.Messages != null && session.Messages.Any())
+            {
+                var firstUserMessage = session.Messages
+                    .Where(m => m.IsUser)
+                    .OrderBy(m => m.Timestamp)
+                    .FirstOrDefault();
+                    
+                if (firstUserMessage != null)
+                {
+                    string userContent = firstUserMessage.Content;
+                    Title = userContent.Length > 25 ? userContent.Substring(0, 22) + "..." : userContent;
+                }
+                else
+                {
+                    Title = session.Title;
+                }
+            }
+            else
+            {
+                Title = session.Title;
+            }
             
             // Handle case where messages might not be loaded
             if (session.Messages != null && session.Messages.Any())

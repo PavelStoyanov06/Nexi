@@ -75,9 +75,43 @@ namespace Nexi.Services
         public async Task<IEnumerable<ChatSession>> GetSessionsWithoutMessagesAsync()
         {
             using var context = await _contextFactory.CreateDbContextAsync();
-            return await context.ChatSessions
+            
+            // Get all sessions
+            var sessions = await context.ChatSessions
                 .OrderByDescending(s => s.LastModifiedAt)
                 .ToListAsync();
+                
+            // For each session, load only the first user message and last message
+            foreach (var session in sessions)
+            {
+                var messages = new List<ChatMessageData>();
+                
+                // Get the first user message (for title generation)
+                var firstUserMessage = await context.ChatMessages
+                    .Where(m => m.SessionId == session.Id && m.IsUser)
+                    .OrderBy(m => m.Timestamp)
+                    .FirstOrDefaultAsync();
+                    
+                if (firstUserMessage != null)
+                {
+                    messages.Add(firstUserMessage);
+                }
+                
+                // Get the last message (for preview)
+                var lastMessage = await context.ChatMessages
+                    .Where(m => m.SessionId == session.Id)
+                    .OrderByDescending(m => m.Timestamp)
+                    .FirstOrDefaultAsync();
+                    
+                if (lastMessage != null && (firstUserMessage == null || lastMessage.Id != firstUserMessage.Id))
+                {
+                    messages.Add(lastMessage);
+                }
+                
+                session.Messages = messages;
+            }
+            
+            return sessions;
         }
 
         public async Task<IEnumerable<ChatSession>> SearchSessionsAsync(string query)
