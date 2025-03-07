@@ -35,7 +35,7 @@
                 Margin="20,20,20,0"
                 Padding="16"
                 CornerRadius="8"
-                Background="#0D1B3E"
+                Background="#1E1A33"
                 BoxShadow="0 2 8 0 #30000000"
                 IsVisible="{CompiledBinding ShowCommandInstructions}">
           <StackPanel>
@@ -43,14 +43,14 @@
               <TextBlock Text="Command Reference" 
                          FontWeight="Bold" 
                          FontSize="16" 
-                         Foreground="#00FFFF"
+                         Foreground="#B388FF"
                          Margin="0,0,0,8"/>
               <Button HorizontalAlignment="Right"
                       Background="Transparent"
                       Padding="4"
                       Command="{CompiledBinding ToggleCommandInstructionsCommand}"
                       CommandParameter="False">
-                <material:MaterialIcon Kind="Close" Width="16" Height="16" Foreground="#00FFFF"/>
+                <material:MaterialIcon Kind="Close" Width="16" Height="16" Foreground="#B388FF"/>
               </Button>
             </Grid>
             
@@ -60,7 +60,7 @@
                        Margin="0,0,0,8"/>
                        
             <Expander Header="Web Search Commands" 
-                      Foreground="#00FFFF" 
+                      Foreground="#B388FF" 
                       IsExpanded="True"
                       Margin="0,4">
               <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
@@ -73,7 +73,7 @@
             </Expander>
             
             <Expander Header="Document Commands" 
-                      Foreground="#00FFFF"
+                      Foreground="#B388FF"
                       Margin="0,4">
               <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
                 <Run Text="• /create text [filename] - Create a text file"/>
@@ -90,7 +90,7 @@
             </Expander>
             
             <Expander Header="Window Control Commands" 
-                      Foreground="#00FFFF"
+                      Foreground="#B388FF"
                       Margin="0,4">
               <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
                 <Run Text="• /minimize - Minimize active window"/>
@@ -102,7 +102,7 @@
             </Expander>
             
             <Expander Header="Other Commands" 
-                      Foreground="#00FFFF"
+                      Foreground="#B388FF"
                       Margin="0,4">
               <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
                 <Run Text="• /help - Show all available commands"/>
@@ -116,7 +116,7 @@
             </Expander>
             
             <TextBlock Text="Tip: You can use these commands with or without the '/' prefix." 
-                       Foreground="White" 
+                       Foreground="#D8C7FF" 
                        FontStyle="Italic"
                        Margin="0,8,0,0"/>
           </StackPanel>
@@ -162,7 +162,7 @@
                           HorizontalAlignment="Right"
                           Margin="0,8,0,0"
                           Padding="8,4"
-                          Background="#33FFFFFF"
+                          Background="#33B388FF"
                           CornerRadius="4"
                           IsVisible="{CompiledBinding !IsUser}"
                           Command="{CompiledBinding $parent[ItemsControl].((vm:ChatViewModel)DataContext).CopyToClipboardCommand}"
@@ -349,12 +349,12 @@
     
     <!-- System message style -->
     <Style Selector="Border.system-message">
-      <Setter Property="Background" Value="#0D1B3E"/>
+      <Setter Property="Background" Value="#1E1A33"/>
     </Style>
     
     <!-- System message text style -->
     <Style Selector="Border.system-message TextBlock">
-      <Setter Property="Foreground" Value="#00FFFF"/>
+      <Setter Property="Foreground" Value="#B388FF"/>
     </Style>
     
     <!-- Copy button style -->
@@ -370,7 +370,7 @@
     
     <Style Selector="Button.copy-button:pointerover">
       <Setter Property="Opacity" Value="1"/>
-      <Setter Property="Background" Value="#66FFFFFF"/>
+      <Setter Property="Background" Value="#66B388FF"/>
     </Style>
   </UserControl.Styles>
 </UserControl>
