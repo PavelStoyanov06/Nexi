@@ -6,6 +6,10 @@ using Nexi.UI.ViewModels;
 using System;
 using System.Collections.Specialized;
 using Microsoft.Extensions.Logging;
+using System.ComponentModel;
+using Nexi.UI.Models;
+using System.Linq;
+using Avalonia.Threading;
 
 namespace Nexi.UI.Views
 {
@@ -42,6 +46,15 @@ namespace Nexi.UI.Views
                     
                     // Subscribe to the ScrollToBottom event
                     viewModel.ScrollToBottom += ScrollToBottomHandler;
+                    
+                    // Subscribe to property changes on individual messages
+                    foreach (var message in viewModel.Messages)
+                    {
+                        if (message is INotifyPropertyChanged notifyPropertyChanged)
+                        {
+                            notifyPropertyChanged.PropertyChanged += Message_PropertyChanged;
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -61,6 +74,15 @@ namespace Nexi.UI.Views
                     // Unsubscribe from events to prevent memory leaks
                     viewModel.Messages.CollectionChanged -= Messages_CollectionChanged;
                     viewModel.ScrollToBottom -= ScrollToBottomHandler;
+                    
+                    // Unsubscribe from property changes on individual messages
+                    foreach (var message in viewModel.Messages)
+                    {
+                        if (message is INotifyPropertyChanged notifyPropertyChanged)
+                        {
+                            notifyPropertyChanged.PropertyChanged -= Message_PropertyChanged;
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -73,7 +95,33 @@ namespace Nexi.UI.Views
         {
             try
             {
-                if (e.Action == NotifyCollectionChangedAction.Add)
+                // Handle new items
+                if (e.NewItems != null)
+                {
+                    foreach (var item in e.NewItems)
+                    {
+                        if (item is INotifyPropertyChanged notifyPropertyChanged)
+                        {
+                            notifyPropertyChanged.PropertyChanged += Message_PropertyChanged;
+                        }
+                    }
+                }
+                
+                // Handle removed items
+                if (e.OldItems != null)
+                {
+                    foreach (var item in e.OldItems)
+                    {
+                        if (item is INotifyPropertyChanged notifyPropertyChanged)
+                        {
+                            notifyPropertyChanged.PropertyChanged -= Message_PropertyChanged;
+                        }
+                    }
+                }
+                
+                // Scroll to bottom for new items
+                if (e.Action == NotifyCollectionChangedAction.Add || 
+                    e.Action == NotifyCollectionChangedAction.Replace)
                 {
                     ScrollToBottom();
                 }
@@ -81,6 +129,23 @@ namespace Nexi.UI.Views
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Error in Messages_CollectionChanged");
+            }
+        }
+        
+        private void Message_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            try
+            {
+                // When a message's content changes, scroll to bottom
+                if (e.PropertyName == nameof(ChatMessage.Content))
+                {
+                    // Use Dispatcher to ensure we're on the UI thread
+                    Dispatcher.UIThread.Post(ScrollToBottom);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error in Message_PropertyChanged");
             }
         }
 

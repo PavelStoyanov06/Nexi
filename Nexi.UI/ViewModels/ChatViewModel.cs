@@ -368,6 +368,7 @@ namespace Nexi.UI.ViewModels
         private async Task ProcessInputAsync(string input)
         {
             IsProcessing = true;
+            _logger.LogInformation("Processing input: {Input}", input);
             
             try
             {
@@ -400,6 +401,8 @@ namespace Nexi.UI.ViewModels
                 // Then check if we should use AI model
                 else if (!string.IsNullOrEmpty(SelectedModelId) && await _aiModelService.IsModelDownloadedAsync(SelectedModelId))
                 {
+                    _logger.LogInformation("Using AI model {ModelId} to generate response", SelectedModelId);
+                    
                     // Create a response message placeholder that will be updated in real-time
                     var responseMessage = new ChatMessage
                     {
@@ -408,50 +411,129 @@ namespace Nexi.UI.ViewModels
                         IsUser = false
                     };
                     
-                    // Add the placeholder message to the chat
-                    await AddMessageAsync(responseMessage);
+                    // Add the placeholder message to the chat directly to ensure immediate UI update
+                    await Dispatcher.UIThread.InvokeAsync(() => 
+                    {
+                        Messages.Add(responseMessage);
+                        this.RaisePropertyChanged(nameof(Messages));
+                        ScrollToBottom?.Invoke();
+                    });
+                    
+                    _logger.LogInformation("Added 'Thinking...' placeholder message to chat");
                     
                     // Use the AI model for generating a response
                     string generatedText = "";
+                    bool receivedAnyTokens = false;
                     
-                    await _aiModelService.RunModelInferenceAsync(
-                        SelectedModelId,
-                        input,
-                        token => 
+                    // Create a token handler that updates the UI
+                    Action<string> tokenHandler = token => 
+                    {
+                        if (string.IsNullOrEmpty(token)) return;
+                        
+                        receivedAnyTokens = true;
+                        generatedText += token;
+                        
+                        // Log the first few tokens to help with debugging
+                        if (generatedText.Length <= 20)
                         {
-                            generatedText += token;
-                            
-                            // Update the message content as tokens arrive
-                            Dispatcher.UIThread.Post(() => 
+                            _logger.LogDebug("Received token: {Token}", token);
+                        }
+                        
+                        // Update the message content as tokens arrive - use InvokeAsync instead of Post
+                        // to ensure the UI update happens immediately
+                        Dispatcher.UIThread.InvokeAsync(() => 
+                        {
+                            try
                             {
                                 // Clean up the response as it's being generated
                                 responseMessage.Content = CleanupAIResponse(generatedText);
                                 
-                                // Force UI update
+                                // Force property change notification on the specific message
+                                // This is crucial for the UI to update
+                                var index = Messages.IndexOf(responseMessage);
+                                if (index >= 0)
+                                {
+                                    // Replace the message to force a collection change notification
+                                    Messages[index] = responseMessage;
+                                }
+                                
+                                // Also raise property changed for the entire collection
                                 this.RaisePropertyChanged(nameof(Messages));
                                 
                                 // Trigger scroll to bottom to follow the generating text
                                 ScrollToBottom?.Invoke();
-                            });
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error updating UI during token generation");
+                            }
                         });
+                    };
                     
-                    // Update the final response with cleaned text
-                    string cleanedResponse = CleanupAIResponse(generatedText);
-                    responseMessage.Content = cleanedResponse;
+                    _logger.LogInformation("Starting model inference");
+                    // Run the model inference
+                    bool success = await _aiModelService.RunModelInferenceAsync(
+                        SelectedModelId,
+                        input,
+                        tokenHandler);
+                    _logger.LogInformation("Model inference completed with success={Success}, receivedAnyTokens={ReceivedAnyTokens}", success, receivedAnyTokens);
                     
-                    // Force UI update for the final response
-                    this.RaisePropertyChanged(nameof(Messages));
-                    
-                    // Save the message to storage
-                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                    // If we didn't receive any tokens or the inference failed, show an error
+                    if (!receivedAnyTokens || !success)
                     {
-                        Content = cleanedResponse,
-                        IsUser = false,
-                        Timestamp = responseMessage.Timestamp
-                    });
-                    
-                    // Remember this message for potential document creation
-                    _lastUsedAiMessage = responseMessage;
+                        _logger.LogError("AI model inference failed or didn't generate any tokens");
+                        
+                        // Update the message to show an error - use InvokeAsync for immediate UI update
+                        await Dispatcher.UIThread.InvokeAsync(() => 
+                        {
+                            responseMessage.Content = "Sorry, I couldn't generate a response. Please try again.";
+                            
+                            // Force property change notification
+                            var index = Messages.IndexOf(responseMessage);
+                            if (index >= 0)
+                            {
+                                // Replace the message to force a collection change notification
+                                Messages[index] = responseMessage;
+                            }
+                            
+                            this.RaisePropertyChanged(nameof(Messages));
+                            ScrollToBottom?.Invoke();
+                        });
+                    }
+                    else
+                    {
+                        // Update the final response with cleaned text
+                        string cleanedResponse = CleanupAIResponse(generatedText);
+                        _logger.LogInformation("Generated response of length {Length}", cleanedResponse.Length);
+                        
+                        // Update the UI on the UI thread - use InvokeAsync for immediate UI update
+                        await Dispatcher.UIThread.InvokeAsync(() => 
+                        {
+                            responseMessage.Content = cleanedResponse;
+                            
+                            // Force property change notification
+                            var index = Messages.IndexOf(responseMessage);
+                            if (index >= 0)
+                            {
+                                // Replace the message to force a collection change notification
+                                Messages[index] = responseMessage;
+                            }
+                            
+                            this.RaisePropertyChanged(nameof(Messages));
+                            ScrollToBottom?.Invoke();
+                        });
+                        
+                        // Save the message to storage
+                        await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                        {
+                            Content = cleanedResponse,
+                            IsUser = false,
+                            Timestamp = responseMessage.Timestamp
+                        });
+                        
+                        // Remember this message for potential document creation
+                        _lastUsedAiMessage = responseMessage;
+                    }
                 }
                 else
                 {

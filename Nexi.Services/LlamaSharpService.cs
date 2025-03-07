@@ -328,14 +328,11 @@ namespace Nexi.Services
                     // Use a cancellation token with a timeout to prevent hanging
                     using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
                     
-                    // Create a token handler that tracks if we received any tokens
-                    Action<string> tokenHandler = token =>
-                    {
-                        onTokenGenerated?.Invoke(token);
-                    };
-                    
                     // Generate the response
                     var responseTokens = new List<string>();
+                    
+                    _logger.LogInformation("Starting token generation for prompt: {PromptStart}...", 
+                        prompt.Length > 50 ? prompt.Substring(0, 50) + "..." : prompt);
                     
                     // Process the tokens as they come in
                     await foreach (var token in _session.ChatAsync(
@@ -356,8 +353,16 @@ namespace Nexi.Services
                         // Add to our collection
                         responseTokens.Add(token);
                         
-                        // Call the token handler
-                        tokenHandler(token);
+                        // Log the first few tokens to help with debugging
+                        if (responseTokens.Count <= 5)
+                        {
+                            _logger.LogDebug("Generated token {Count}: {Token}", responseTokens.Count, token);
+                        }
+                        
+                        // Call the token handler immediately to ensure UI updates
+                        // Use Task.Run with await to ensure tokens are processed in order
+                        // but don't block the token generation
+                        await Task.Run(() => onTokenGenerated?.Invoke(token));
                     }
                     
                     // If we didn't receive any tokens, something went wrong
@@ -365,6 +370,10 @@ namespace Nexi.Services
                     {
                         _logger.LogWarning("No tokens were generated during inference");
                         onTokenGenerated?.Invoke("No response was generated. This could be due to a problem with the model or the native library.");
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Generated {Count} tokens in response", responseTokens.Count);
                     }
                     
                     // Return the full response as a string
