@@ -41,7 +41,7 @@ namespace Nexi.Services
                 // Open the file with the default text editor
                 OpenFile(filePath);
 
-                return $"Created and opened text document: {fileName}";
+                return $"Created and opened text document: {fileName}" + (content != null ? " with your content" : "");
             }
             catch (Exception ex)
             {

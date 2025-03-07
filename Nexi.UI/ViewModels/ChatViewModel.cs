@@ -1,17 +1,19 @@
-﻿using Avalonia.Threading;
-using Microsoft.Extensions.Logging;
-using Nexi.Data.Models;
-using Nexi.Services.Interfaces;
-using Nexi.UI.Models;
-using ReactiveUI;
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Collections.Specialized;
+using System.Text;
+using ReactiveUI;
+using Nexi.Services.Interfaces;
+using Nexi.UI.Models;
+using Microsoft.Extensions.Logging;
+using Avalonia.Threading;
+using System.IO;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Nexi.Data.Models;
 
 namespace Nexi.UI.ViewModels
 {
@@ -34,6 +36,7 @@ namespace Nexi.UI.ViewModels
         private string? _selectedModelId;
         private bool _isDisposed = false;
         private bool _showCommandInstructions = false;
+        private ChatMessage? _lastUsedAiMessage = null;
 
         // Event that the view can subscribe to for scrolling to bottom
         public event Action? ScrollToBottom;
@@ -66,6 +69,7 @@ namespace Nexi.UI.ViewModels
             SendMessageCommand = ReactiveCommand.CreateFromTask(SendMessageAsync, this.WhenAnyValue(x => x.HasMessageText));
             ClearMessageCommand = ReactiveCommand.Create(() => CurrentMessage = string.Empty);
             ToggleCommandInstructionsCommand = ReactiveCommand.Create<bool>(show => ShowCommandInstructions = show);
+            CopyToClipboardCommand = ReactiveCommand.Create<string>(CopyTextToClipboard);
 
             // Load the selected model from user settings
             _ = LoadSelectedModelAsync();
@@ -214,6 +218,7 @@ namespace Nexi.UI.ViewModels
         public ICommand SendMessageCommand { get; }
         public ICommand ClearMessageCommand { get; }
         public ICommand ToggleCommandInstructionsCommand { get; }
+        public ICommand CopyToClipboardCommand { get; }
 
         private async Task LoadChatHistoryAsync(string sessionId)
         {
@@ -296,199 +301,26 @@ namespace Nexi.UI.ViewModels
                 }
 
                 // Add user message to the chat
-                var aiUserMessage = new ChatMessage
+                var userMessage = new ChatMessage
                 {
                     Content = userMessageText,
                     Timestamp = DateTime.Now,
                     IsUser = true
                 };
                 
-                await AddMessageAsync(aiUserMessage);
-
-                // Check if we have a selected model
-                if (string.IsNullOrEmpty(SelectedModelId))
-                {
-                    _logger.LogWarning("No model selected for inference");
-                    await AddMessageAsync(new ChatMessage
-                    {
-                        Content = "Please select an AI model in the Settings before sending messages.",
-                        Timestamp = DateTime.Now,
-                        IsUser = false,
-                        IsSystemMessage = true
-                    });
-                    return;
-                }
-
-                // Create a placeholder for the assistant's response
-                var assistantMessage = new ChatMessage
-                {
-                    Content = "Thinking...",
-                    Timestamp = DateTime.Now,
-                    IsUser = false
-                };
+                await AddMessageAsync(userMessage);
                 
-                await AddMessageAsync(assistantMessage);
-
-                // Check if the model is initialized
-                bool isInitialized = await _llamaSharpService.IsModelInitializedAsync();
-                if (!isInitialized)
+                // Auto-set title if this is the first user message
+                if (Title == "New Chat" && Messages.Count <= 3)
                 {
-                    _logger.LogInformation("Model not initialized, initializing now");
-                    
-                    // Get the model path
-                    string modelPath = await _aiModelService.GetModelLocalPathAsync(SelectedModelId);
-                    
-                    // Get user settings for context size and GPU layers
-                    var settings = await _userSettingsService.GetSettingsAsync();
-                    int contextSize = settings.ContextSize;
-                    int gpuLayerCount = settings.UseGPU ? settings.GpuLayerCount : 0;
-                    
-                    // Initialize the model
-                    bool initialized = await _llamaSharpService.InitializeModelAsync(modelPath, contextSize, gpuLayerCount);
-                    if (!initialized)
-                    {
-                        _logger.LogError("Failed to initialize model");
-                        assistantMessage.Content = "Error: Failed to initialize the AI model. Please try again or select a different model.";
-                        
-                        // Force UI update
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            this.RaisePropertyChanged(nameof(Messages));
-                            ScrollToBottom?.Invoke();
-                        });
-                        return;
-                    }
+                    // Always use the user's first message as the title
+                    var firstUserMessage = Messages.FirstOrDefault(m => m.IsUser)?.Content ?? userMessageText;
+                    Title = firstUserMessage.Length > 25 ? firstUserMessage.Substring(0, 22) + "..." : firstUserMessage;
+                    await UpdateSessionTitleAsync(_sessionId, Title);
                 }
 
-                // Use the LlamaSharpService directly for streaming responses
-                try
-                {
-                    _logger.LogInformation("Starting chat with message: {Message}", userMessageText);
-                    
-                    // Get the streaming response
-                    var responseStream = await _llamaSharpService.ChatAsync(userMessageText);
-                    
-                    // Process the tokens as they arrive
-                    StringBuilder responseBuilder = new StringBuilder();
-                    int tokenCount = 0;
-                    
-                    await foreach (var token in responseStream)
-                    {
-                        tokenCount++;
-                        
-                        // Append the token to our response
-                        responseBuilder.Append(token);
-                        
-                        // Update the UI with the current response immediately
-                        assistantMessage.Content = responseBuilder.ToString();
-                        
-                        // Force UI update on the UI thread for every token
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            // Explicitly raise property changed for the Messages collection
-                            this.RaisePropertyChanged(nameof(Messages));
-                            
-                            // Also raise property changed for the specific message
-                            int index = Messages.IndexOf(assistantMessage);
-                            if (index >= 0)
-                            {
-                                // Create a temporary copy of the message
-                                var updatedMessage = new ChatMessage
-                                {
-                                    Content = assistantMessage.Content,
-                                    Timestamp = assistantMessage.Timestamp,
-                                    IsUser = assistantMessage.IsUser,
-                                    IsSystemMessage = assistantMessage.IsSystemMessage
-                                };
-                                
-                                // Replace the message in the collection
-                                Messages[index] = updatedMessage;
-                                
-                                // Update our reference
-                                assistantMessage = updatedMessage;
-                            }
-                            
-                            // Scroll to bottom to show the latest content
-                            ScrollToBottom?.Invoke();
-                        });
-                        
-                        // Log every 10 tokens for debugging
-                        if (tokenCount % 10 == 0)
-                        {
-                            _logger.LogDebug("Received {Count} tokens. Current response: {Response}", 
-                                tokenCount, responseBuilder.ToString());
-                        }
-                    }
-                    
-                    _logger.LogInformation("Chat completed. Total tokens: {Count}", tokenCount);
-                    
-                    // Final update to ensure content is set
-                    if (tokenCount > 0)
-                    {
-                        assistantMessage.Content = responseBuilder.ToString();
-                        
-                        // Force UI update
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            this.RaisePropertyChanged(nameof(Messages));
-                            ScrollToBottom?.Invoke();
-                        });
-                        
-                        // Save the assistant message to storage
-                        await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                        {
-                            Content = assistantMessage.Content,
-                            IsUser = false,
-                            Timestamp = DateTime.Now
-                        });
-
-                        // Update the chat title if this is a new chat
-                        if (Messages.Count <= 2 && Title == "New Chat")
-                        {
-                            var newTitle = GenerateTitleFromMessages();
-                            await UpdateSessionTitleAsync(_sessionId, newTitle);
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning("No tokens were generated in the response");
-                        assistantMessage.Content = "No response was generated. Please try again.";
-                        
-                        // Force UI update
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            this.RaisePropertyChanged(nameof(Messages));
-                            ScrollToBottom?.Invoke();
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error during chat: {ErrorMessage}", ex.Message);
-                    
-                    // Update the assistant message with the error
-                    assistantMessage.Content = $"Error: {ex.Message}";
-                    
-                    // Force UI update
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        this.RaisePropertyChanged(nameof(Messages));
-                        ScrollToBottom?.Invoke();
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in SendMessageAsync: {ErrorMessage}", ex.Message);
-                
-                // Add error message to the chat
-                await AddMessageAsync(new ChatMessage
-                {
-                    Content = $"Error: {ex.Message}",
-                    IsUser = false,
-                    IsSystemMessage = true,
-                    Timestamp = DateTime.Now
-                });
+                // Process the input
+                await ProcessInputAsync(userMessageText);
             }
             finally
             {
@@ -521,7 +353,9 @@ namespace Nexi.UI.ViewModels
                 // Auto-set title if this is the first user message
                 if (Title == "New Chat" && Messages.Count <= 3)
                 {
-                    Title = input.Length > 25 ? input.Substring(0, 22) + "..." : input;
+                    // Always use the user's first message as the title
+                    var firstUserMessage = Messages.FirstOrDefault(m => m.IsUser)?.Content ?? input;
+                    Title = firstUserMessage.Length > 25 ? firstUserMessage.Substring(0, 22) + "..." : firstUserMessage;
                     await UpdateSessionTitleAsync(_sessionId, Title);
                 }
 
@@ -816,6 +650,57 @@ namespace Nexi.UI.ViewModels
                     return;
                 }
             }
+            
+            // Special handling for AI-assisted document creation
+            if ((command.StartsWith("create text ", StringComparison.OrdinalIgnoreCase) || 
+                 command.StartsWith("create document ", StringComparison.OrdinalIgnoreCase)) && 
+                !command.Contains("|"))
+            {
+                // Check if there's a previous AI message that we can use as content
+                var lastAiMessage = Messages
+                    .Where(m => !m.IsUser && !m.IsSystemMessage)
+                    .LastOrDefault();
+                
+                if (lastAiMessage != null && lastAiMessage != _lastUsedAiMessage)
+                {
+                    // Add the AI content to the command
+                    string originalCommand = command;
+                    command = $"{command} | {lastAiMessage.Content}";
+                    
+                    // Process the modified command
+                    var commandResult = _commandProcessor.ProcessCommand(command);
+                    
+                    // Add the result to the chat
+                    var commandResponseMessage = new ChatMessage
+                    {
+                        Content = commandResult,
+                        IsUser = false,
+                        IsSystemMessage = true,
+                        Timestamp = DateTime.Now
+                    };
+                    Messages.Add(commandResponseMessage);
+                    
+                    // Save the command and response to storage
+                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                    {
+                        Content = "/" + originalCommand,
+                        IsUser = true,
+                        Timestamp = DateTime.Now
+                    });
+                    
+                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                    {
+                        Content = commandResult,
+                        IsUser = false,
+                        Timestamp = DateTime.Now
+                    });
+                    
+                    // Mark this AI message as used
+                    _lastUsedAiMessage = lastAiMessage;
+                    
+                    return;
+                }
+            }
 
             // Process the command
             var result = _commandProcessor.ProcessCommand(command);
@@ -857,13 +742,83 @@ namespace Nexi.UI.ViewModels
                 Content = "Welcome to Nexi! I'm here to help you. Type a message to start chatting, or use commands like /help to see what I can do.\n\n" +
                           "New features available:\n" +
                           "• Web search - Try '/search in chat [query]'\n" +
-                          "• Document creation - Try '/create text [filename]'\n\n" +
+                          "• Document creation - Try '/create text [filename]'\n" +
+                          "• AI-assisted documents - Ask me to create content, then use '/create text [filename]' to save it\n\n" +
                           "Click the help icon (?) in the bottom left for more commands.",
                 IsUser = false,
                 Timestamp = DateTime.Now
             };
             
             await AddMessageAsync(welcomeMessage);
+        }
+
+        private void CopyTextToClipboard(string text)
+        {
+            try
+            {
+                // Show a system message indicating the text was copied
+                var copyMessage = new ChatMessage
+                {
+                    Content = "Text copied to clipboard",
+                    IsUser = false,
+                    IsSystemMessage = true,
+                    Timestamp = DateTime.Now
+                };
+                Messages.Add(copyMessage);
+                
+                // Remove the message after 3 seconds
+                Task.Delay(3000).ContinueWith(_ => 
+                {
+                    Dispatcher.UIThread.Post(() => 
+                    {
+                        if (Messages.Contains(copyMessage))
+                        {
+                            Messages.Remove(copyMessage);
+                        }
+                    });
+                });
+                
+                // Copy to clipboard using platform-specific code
+                Task.Run(() => {
+                    try {
+                        // Use a simple approach that works cross-platform
+                        var tempFile = System.IO.Path.GetTempFileName();
+                        System.IO.File.WriteAllText(tempFile, text);
+                        
+                        // Use platform-specific clipboard command
+                        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                        {
+                            System.Diagnostics.Process.Start("cmd.exe", $"/c clip < \"{tempFile}\"");
+                        }
+                        else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
+                        {
+                            System.Diagnostics.Process.Start("bash", $"-c \"cat '{tempFile}' | pbcopy\"");
+                        }
+                        else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                        {
+                            System.Diagnostics.Process.Start("bash", $"-c \"cat '{tempFile}' | xclip -selection clipboard\"");
+                        }
+                        
+                        // Clean up temp file
+                        Task.Delay(1000).ContinueWith(_ => {
+                            try {
+                                if (System.IO.File.Exists(tempFile))
+                                {
+                                    System.IO.File.Delete(tempFile);
+                                }
+                            } catch {}
+                        });
+                        
+                        _logger.LogInformation("Text copied to clipboard");
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error in clipboard process: {Message}", ex.Message);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error copying text to clipboard");
+            }
         }
 
         public override void Dispose()

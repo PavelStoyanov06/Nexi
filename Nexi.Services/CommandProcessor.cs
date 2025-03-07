@@ -177,16 +177,32 @@ namespace Nexi.Services
                 return $"Searching for: {searchQuery}. Results will appear shortly.";
             }
             
-            if (normalizedInput.StartsWith("create document "))
+            if (normalizedInput.StartsWith("create document ") || normalizedInput.StartsWith("create text "))
             {
-                string fileName = input.Substring("create document".Length).Trim();
-                return _documentService.CreateDocument(fileName);
-            }
-            
-            if (normalizedInput.StartsWith("create text "))
-            {
-                string fileName = input.Substring("create text".Length).Trim();
-                return _documentService.CreateTextDocument(fileName);
+                bool isTextFile = normalizedInput.StartsWith("create text ");
+                string commandPrefix = isTextFile ? "create text " : "create document ";
+                
+                // Extract the command part
+                string remainingText = input.Substring(commandPrefix.Length).Trim();
+                
+                // Check if there's content after the filename (separated by a pipe character)
+                string fileName;
+                string? content = null;
+                
+                int pipeIndex = remainingText.IndexOf('|');
+                if (pipeIndex >= 0)
+                {
+                    fileName = remainingText.Substring(0, pipeIndex).Trim();
+                    content = remainingText.Substring(pipeIndex + 1).Trim();
+                }
+                else
+                {
+                    fileName = remainingText;
+                }
+                
+                return isTextFile 
+                    ? _documentService.CreateTextDocument(fileName, content)
+                    : _documentService.CreateDocument(fileName, content);
             }
             
             if (normalizedInput.StartsWith("open url "))

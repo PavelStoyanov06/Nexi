@@ -79,6 +79,13 @@
                 <Run Text="• /create text [filename] - Create a text file"/>
                 <LineBreak/>
                 <Run Text="• /create document [filename] - Create a Word document"/>
+                <LineBreak/>
+                <LineBreak/>
+                <Run Text="AI-Assisted Document Creation:"/>
+                <LineBreak/>
+                <Run Text="Ask the AI to create content, then use the commands above to save the AI's response to a file automatically."/>
+                <LineBreak/>
+                <Run Text="Example: Ask 'Write a poem about nature' then use '/create text MyPoem'"/>
               </TextBlock>
             </Expander>
             
@@ -131,17 +138,42 @@
                       Classes.system-message="{CompiledBinding IsSystemMessage}"
                       HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
                       MaxWidth="600">
-                <StackPanel>
-                  <TextBlock Text="{CompiledBinding Content}"
-                           TextWrapping="Wrap"
-                           FontSize="14"
-                           Foreground="White"/>
-                  <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
-                           FontSize="11"
-                           Margin="0,8,0,0"
-                           HorizontalAlignment="Right"
-                           Foreground="White"/>
-                </StackPanel>
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  
+                  <StackPanel Grid.Row="0">
+                    <TextBlock Text="{CompiledBinding Content}"
+                             TextWrapping="Wrap"
+                             FontSize="14"
+                             Foreground="White"/>
+                    <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
+                             FontSize="11"
+                             Margin="0,8,0,0"
+                             HorizontalAlignment="Right"
+                             Foreground="White"/>
+                  </StackPanel>
+                  
+                  <!-- Copy Button (only for AI messages) -->
+                  <Button Grid.Row="1"
+                          Classes="copy-button"
+                          HorizontalAlignment="Right"
+                          Margin="0,8,0,0"
+                          Padding="8,4"
+                          Background="#33FFFFFF"
+                          CornerRadius="4"
+                          IsVisible="{CompiledBinding !IsUser}"
+                          Command="{CompiledBinding $parent[ItemsControl].((vm:ChatViewModel)DataContext).CopyToClipboardCommand}"
+                          CommandParameter="{CompiledBinding Content}"
+                          ToolTip.Tip="Copy to clipboard">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <material:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/>
+                      <TextBlock Text="Copy" FontSize="12"/>
+                    </StackPanel>
+                  </Button>
+                </Grid>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -186,7 +218,8 @@
                   VerticalContentAlignment="Center"
                   HorizontalContentAlignment="Center"
                   Command="{CompiledBinding ToggleCommandInstructionsCommand}"
-                  CommandParameter="True">
+                  CommandParameter="{CompiledBinding !ShowCommandInstructions}"
+                  ToolTip.Tip="Show command reference">
             <material:MaterialIcon Kind="HelpCircleOutline" Width="20" Height="20"/>
           </Button>
         </Border>
@@ -322,6 +355,22 @@
     <!-- System message text style -->
     <Style Selector="Border.system-message TextBlock">
       <Setter Property="Foreground" Value="#00FFFF"/>
+    </Style>
+    
+    <!-- Copy button style -->
+    <Style Selector="Button.copy-button">
+      <Setter Property="Opacity" Value="0.5"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    
+    <Style Selector="Button.copy-button:pointerover">
+      <Setter Property="Opacity" Value="1"/>
+      <Setter Property="Background" Value="#66FFFFFF"/>
     </Style>
   </UserControl.Styles>
 </UserControl>
