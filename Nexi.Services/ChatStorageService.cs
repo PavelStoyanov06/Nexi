@@ -117,8 +117,20 @@ namespace Nexi.Services
                 .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == sessionId);
 
+            // Create the session if it doesn't exist
             if (session == null)
-                throw new KeyNotFoundException($"Chat session {sessionId} not found");
+            {
+                _logger.LogWarning("Session {SessionId} not found, creating a new one", sessionId);
+                session = new ChatSession
+                {
+                    Id = sessionId,
+                    Title = "New Chat",
+                    CreatedAt = DateTime.UtcNow,
+                    LastModifiedAt = DateTime.UtcNow,
+                    Messages = new List<ChatMessageData>()
+                };
+                context.ChatSessions.Add(session);
+            }
 
             message.SessionId = sessionId;
             message.Timestamp = DateTime.UtcNow;

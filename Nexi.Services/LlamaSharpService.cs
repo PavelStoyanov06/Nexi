@@ -603,13 +603,13 @@ namespace Nexi.Services
             {
                 _logger.LogInformation("Disposing LlamaSharp resources");
                 
+                // Clear session first
                 _session = null;
                 
-                if (_executor != null)
-                {
-                    _executor = null;
-                }
+                // Clear executor
+                _executor = null;
                 
+                // Dispose context with exception handling
                 if (_context != null)
                 {
                     try
@@ -620,9 +620,13 @@ namespace Nexi.Services
                     {
                         _logger.LogError(ex, "Error disposing context: {ErrorMessage}", ex.Message);
                     }
-                    _context = null;
+                    finally
+                    {
+                        _context = null;
+                    }
                 }
                 
+                // Dispose model with exception handling
                 if (_model != null)
                 {
                     try
@@ -633,20 +637,30 @@ namespace Nexi.Services
                     {
                         _logger.LogError(ex, "Error disposing model: {ErrorMessage}", ex.Message);
                     }
-                    _model = null;
+                    finally
+                    {
+                        _model = null;
+                    }
                 }
                 
                 _isInitialized = false;
+                _currentModelPath = null;
+                _currentContextSize = 0;
+                _currentGpuLayerCount = 0;
+                _lastParams = null;
+                _initializationAttempts = 0;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error disposing resources: {ErrorMessage}", ex.Message);
             }
-            
-            // Force garbage collection to clean up any lingering resources
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect(); // Second collection to ensure finalizers are run
+            finally
+            {
+                // Force garbage collection to clean up any lingering resources
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect(); // Second collection to ensure finalizers are run
+            }
         }
 
         protected virtual void Dispose(bool disposing)

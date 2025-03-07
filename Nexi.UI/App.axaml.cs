@@ -194,6 +194,9 @@ namespace Nexi.UI
                 };
 
                 desktop.MainWindow = mainWindow;
+                
+                // Register application exit handler
+                desktop.Exit += OnApplicationExit;
 
                 // Ensure database is created
                 using var scope = Services.CreateScope();
@@ -264,6 +267,48 @@ namespace Nexi.UI
             if (Current?.Styles[0] is FluentTheme fluentTheme)
             {
                 // Placeholder for accent color logic
+            }
+        }
+
+        private void OnApplicationExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+        {
+            var logger = Services.GetService(typeof(ILogger<App>)) as ILogger<App>;
+            logger?.LogInformation("Application is shutting down, cleaning up resources");
+            
+            try
+            {
+                // Dispose LlamaSharpService
+                var llamaService = Services.GetService(typeof(ILlamaSharpService)) as ILlamaSharpService;
+                if (llamaService != null && llamaService is IDisposable disposableLlama)
+                {
+                    logger?.LogInformation("Disposing LlamaSharpService on application exit");
+                    disposableLlama.Dispose();
+                }
+                
+                // Dispose VoiceService
+                var voiceService = Services.GetService(typeof(IVoiceService)) as IVoiceService;
+                if (voiceService != null && voiceService is IDisposable disposableVoice)
+                {
+                    logger?.LogInformation("Disposing VoiceService on application exit");
+                    disposableVoice.Dispose();
+                }
+                
+                // Dispose MainViewModel
+                var mainViewModel = Services.GetService(typeof(MainViewModel)) as MainViewModel;
+                if (mainViewModel != null)
+                {
+                    logger?.LogInformation("Disposing MainViewModel on application exit");
+                    mainViewModel.Dispose();
+                }
+                
+                // Force garbage collection
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error during application exit cleanup");
             }
         }
     }

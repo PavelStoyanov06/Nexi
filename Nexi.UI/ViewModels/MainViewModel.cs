@@ -312,5 +312,35 @@ namespace Nexi.UI.ViewModels
                 
             CurrentPage = settingsVm;
         }
+        
+        public override void Dispose()
+        {
+            try
+            {
+                _logger.LogInformation("Disposing MainViewModel");
+                
+                // Dispose current page if it's disposable
+                if (CurrentPage != null)
+                {
+                    _logger.LogInformation("Disposing current page: {PageType}", CurrentPage.GetType().Name);
+                    CurrentPage.Dispose();
+                }
+                
+                // Dispose current chat view model
+                if (_currentChatViewModel != null)
+                {
+                    _logger.LogInformation("Disposing current chat view model");
+                    _currentChatViewModel.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error disposing MainViewModel");
+            }
+            finally
+            {
+                base.Dispose();
+            }
+        }
     }
 }

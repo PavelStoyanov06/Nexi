@@ -788,8 +788,29 @@ namespace Nexi.UI.ViewModels
 
         public override void Dispose()
         {
-            _voiceService.SpeechRecognized -= OnSpeechRecognized;
-            base.Dispose();
+            try
+            {
+                // Unsubscribe from events
+                _voiceService.SpeechRecognized -= OnSpeechRecognized;
+                
+                // Clean up LlamaSharpService resources
+                if (_llamaSharpService is IDisposable disposableLlama)
+                {
+                    _logger.LogInformation("Disposing LlamaSharpService from ChatViewModel");
+                    disposableLlama.Dispose();
+                }
+                
+                // Clear any references that might hold onto resources
+                Messages.Clear();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during ChatViewModel disposal");
+            }
+            finally
+            {
+                base.Dispose();
+            }
         }
     }
 }
