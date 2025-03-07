@@ -332,8 +332,37 @@ namespace Nexi.UI.ViewModels
         {
             Dispatcher.UIThread.Post(async () =>
             {
+                // Add user message first
+                var userMessage = new ChatMessage
+                {
+                    Content = text,
+                    Timestamp = DateTime.Now,
+                    IsUser = true
+                };
+                
+                await AddMessageAsync(userMessage);
+                
+                // Then process the input for AI response
                 await ProcessInputAsync(text);
             });
+        }
+
+        // Helper method to clean up AI responses
+        private string CleanupAIResponse(string response)
+        {
+            // Remove "User:" at the end of the response
+            if (response.EndsWith("User:"))
+            {
+                response = response.Substring(0, response.Length - 5).Trim();
+            }
+            
+            // Remove "User:" anywhere in the response
+            response = response.Replace("User:", "").Trim();
+            
+            // Handle case where there might be multiple newlines at the end
+            response = response.TrimEnd('\r', '\n');
+            
+            return response;
         }
 
         private async Task ProcessInputAsync(string input)
@@ -342,14 +371,6 @@ namespace Nexi.UI.ViewModels
             
             try
             {
-                // Add user's message
-                await AddMessageAsync(new ChatMessage
-                {
-                    Content = input,
-                    Timestamp = DateTime.Now,
-                    IsUser = true
-                });
-
                 // Auto-set title if this is the first user message
                 if (Title == "New Chat" && Messages.Count <= 3)
                 {
@@ -402,7 +423,8 @@ namespace Nexi.UI.ViewModels
                             // Update the message content as tokens arrive
                             Dispatcher.UIThread.Post(() => 
                             {
-                                responseMessage.Content = generatedText;
+                                // Clean up the response as it's being generated
+                                responseMessage.Content = CleanupAIResponse(generatedText);
                                 this.RaisePropertyChanged(nameof(Messages));
                             });
                         });
@@ -410,10 +432,13 @@ namespace Nexi.UI.ViewModels
                     // Remove the placeholder message
                     Messages.Remove(responseMessage);
                     
+                    // Clean up the final response
+                    string cleanedResponse = CleanupAIResponse(generatedText);
+                    
                     // Add the final response
                     await AddMessageAsync(new ChatMessage
                     {
-                        Content = generatedText,
+                        Content = cleanedResponse,
                         Timestamp = DateTime.Now,
                         IsUser = false
                     });
