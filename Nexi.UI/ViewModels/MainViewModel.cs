@@ -47,6 +47,7 @@ namespace Nexi.UI.ViewModels
 
             // Initialize with ChatView
             var logger = serviceProvider.GetRequiredService<ILogger<ChatViewModel>>();
+            var webSearchService = serviceProvider.GetRequiredService<IWebSearchService>();
             _currentChatViewModel = new ChatViewModel(
                 _commandProcessor, 
                 _voiceService, 
@@ -54,7 +55,8 @@ namespace Nexi.UI.ViewModels
                 _aiModelService, 
                 _userSettingsService,
                 _llamaSharpService,
-                logger);
+                logger,
+                webSearchService);
             _currentPage = _currentChatViewModel;
 
             UpdateSidebarWidth();
@@ -219,6 +221,7 @@ namespace Nexi.UI.ViewModels
                 _userSettingsService,
                 _llamaSharpService,
                 _serviceProvider.GetRequiredService<ILogger<ChatViewModel>>(),
+                _serviceProvider.GetRequiredService<IWebSearchService>(),
                 sessionId,
                 false // Don't create a new session in the constructor
             );

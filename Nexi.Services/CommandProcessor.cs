@@ -1,12 +1,16 @@
 ﻿using Nexi.Services.Interfaces;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace Nexi.Services
 {
     public class CommandProcessor : ICommandProcessor
     {
         private readonly Dictionary<string, Func<string>> _commands;
+        private readonly IWebSearchService _webSearchService;
+        private readonly IDocumentService _documentService;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -19,8 +23,11 @@ namespace Nexi.Services
         private const int SW_MAXIMIZE = 3;
         private const int SW_RESTORE = 9;
 
-        public CommandProcessor()
+        public CommandProcessor(IWebSearchService webSearchService, IDocumentService documentService)
         {
+            _webSearchService = webSearchService;
+            _documentService = documentService;
+            
             _commands = new Dictionary<string, Func<string>>(StringComparer.OrdinalIgnoreCase)
             {
                 ["minimize"] = MinimizeActiveWindow,
@@ -29,7 +36,12 @@ namespace Nexi.Services
                 ["open browser"] = OpenDefaultBrowser,
                 ["open calculator"] = OpenCalculator,
                 ["help"] = () => $"Available commands: {string.Join(", ", GetAvailableCommands())}",
-                ["time"] = () => $"Current time is: {DateTime.Now:T}"
+                ["time"] = () => $"Current time is: {DateTime.Now:T}",
+                ["search"] = () => "Please use '/search query' to perform a web search",
+                ["search google"] = () => "Please use '/search query' to perform a web search",
+                ["create document"] = () => "Please use '/create document filename' to create a new document",
+                ["create text"] = () => "Please use '/create text filename' to create a new text file",
+                ["open url"] = () => "Please use '/open url [number]' or '/open [full url]' to open a URL"
             };
         }
 
@@ -149,6 +161,46 @@ namespace Nexi.Services
                 .Trim()
                 .ToLower();
 
+            // Handle special commands with parameters
+            if (normalizedInput.StartsWith("search "))
+            {
+                string searchQuery = input.Substring("search".Length).Trim();
+                return _webSearchService.OpenBrowserSearch(searchQuery);
+            }
+            
+            if (normalizedInput.StartsWith("search in chat "))
+            {
+                string searchQuery = input.Substring("search in chat".Length).Trim();
+                // This is an async method, but we can't make ProcessCommand async
+                // So we'll start the task and return a message
+                Task.Run(async () => await _webSearchService.SearchAsync(searchQuery));
+                return $"Searching for: {searchQuery}. Results will appear shortly.";
+            }
+            
+            if (normalizedInput.StartsWith("create document "))
+            {
+                string fileName = input.Substring("create document".Length).Trim();
+                return _documentService.CreateDocument(fileName);
+            }
+            
+            if (normalizedInput.StartsWith("create text "))
+            {
+                string fileName = input.Substring("create text".Length).Trim();
+                return _documentService.CreateTextDocument(fileName);
+            }
+            
+            if (normalizedInput.StartsWith("open url "))
+            {
+                string urlParam = input.Substring("open url".Length).Trim();
+                return OpenUrl(urlParam);
+            }
+            
+            if (normalizedInput.StartsWith("open ") && (normalizedInput.Contains("http") || normalizedInput.Contains("www")))
+            {
+                string url = input.Substring("open".Length).Trim();
+                return OpenUrl(url);
+            }
+
             // Try exact match first
             if (_commands.TryGetValue(normalizedInput, out var handler))
                 return handler();
@@ -169,6 +221,63 @@ namespace Nexi.Services
         public IEnumerable<string> GetAvailableCommands()
         {
             return _commands.Keys;
+        }
+
+        private string OpenUrl(string urlParam)
+        {
+            try
+            {
+                string url;
+                
+                // Check if the parameter is a number (index from search results)
+                if (int.TryParse(urlParam, out int index))
+                {
+                    // This would require storing search results somewhere
+                    // For simplicity, we'll just return an error message
+                    return "Sorry, opening URLs by index is not implemented yet.";
+                }
+                
+                // Otherwise, treat it as a direct URL
+                url = urlParam;
+                
+                // Add http:// if missing
+                if (!url.StartsWith("http://") && !url.StartsWith("https://"))
+                {
+                    url = "https://" + url;
+                }
+                
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    Process.Start(new ProcessStartInfo("cmd", $"/c start {url}")
+                    {
+                        CreateNoWindow = true
+                    });
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    Process.Start("xdg-open", url);
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    Process.Start("open", url);
+                }
+                
+                return $"Opening URL: {url}";
+            }
+            catch (Exception ex)
+            {
+                return $"Failed to open URL: {ex.Message}";
+            }
+        }
+
+        private string PerformWebSearch(string query)
+        {
+            return _webSearchService.OpenBrowserSearch(query);
+        }
+
+        private string CreateTextDocument(string fileName)
+        {
+            return _documentService.CreateTextDocument(fileName);
         }
     }
 }

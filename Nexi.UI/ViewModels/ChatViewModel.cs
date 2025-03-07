@@ -24,6 +24,7 @@ namespace Nexi.UI.ViewModels
         private readonly IUserSettingsService _userSettingsService;
         private readonly ILlamaSharpService _llamaSharpService;
         private readonly ILogger<ChatViewModel> _logger;
+        private readonly IWebSearchService _webSearchService;
         private string _currentMessage = string.Empty;
         private bool _isVoiceModeEnabled;
         private ObservableCollection<ChatMessage> _messages;
@@ -31,6 +32,8 @@ namespace Nexi.UI.ViewModels
         private string _sessionId;
         private string _title;
         private string? _selectedModelId;
+        private bool _isDisposed = false;
+        private bool _showCommandInstructions = false;
 
         // Event that the view can subscribe to for scrolling to bottom
         public event Action? ScrollToBottom;
@@ -43,6 +46,7 @@ namespace Nexi.UI.ViewModels
             IUserSettingsService userSettingsService,
             ILlamaSharpService llamaSharpService,
             ILogger<ChatViewModel> logger,
+            IWebSearchService webSearchService,
             string? sessionId = null,
             bool createNewSession = true)
         {
@@ -53,6 +57,7 @@ namespace Nexi.UI.ViewModels
             _userSettingsService = userSettingsService;
             _llamaSharpService = llamaSharpService;
             _logger = logger;
+            _webSearchService = webSearchService;
             _sessionId = sessionId ?? Guid.NewGuid().ToString();
             _title = "New Chat";
             Messages = new ObservableCollection<ChatMessage>();
@@ -60,6 +65,7 @@ namespace Nexi.UI.ViewModels
             // Initialize commands
             SendMessageCommand = ReactiveCommand.CreateFromTask(SendMessageAsync, this.WhenAnyValue(x => x.HasMessageText));
             ClearMessageCommand = ReactiveCommand.Create(() => CurrentMessage = string.Empty);
+            ToggleCommandInstructionsCommand = ReactiveCommand.Create<bool>(show => ShowCommandInstructions = show);
 
             // Load the selected model from user settings
             _ = LoadSelectedModelAsync();
@@ -137,7 +143,13 @@ namespace Nexi.UI.ViewModels
         public bool IsProcessing
         {
             get => _isProcessing;
-            set => this.RaiseAndSetIfChanged(ref _isProcessing, value);
+            private set => this.RaiseAndSetIfChanged(ref _isProcessing, value);
+        }
+
+        public bool ShowCommandInstructions
+        {
+            get => _showCommandInstructions;
+            set => this.RaiseAndSetIfChanged(ref _showCommandInstructions, value);
         }
 
         public string? SelectedModelId
@@ -201,6 +213,7 @@ namespace Nexi.UI.ViewModels
 
         public ICommand SendMessageCommand { get; }
         public ICommand ClearMessageCommand { get; }
+        public ICommand ToggleCommandInstructionsCommand { get; }
 
         private async Task LoadChatHistoryAsync(string sessionId)
         {
@@ -742,6 +755,68 @@ namespace Nexi.UI.ViewModels
             // Clear the input
             CurrentMessage = string.Empty;
 
+            // Special handling for search in chat command
+            if (command.StartsWith("search in chat ", StringComparison.OrdinalIgnoreCase))
+            {
+                string searchQuery = command.Substring("search in chat".Length).Trim();
+                
+                // Add a processing message
+                var processingMessage = new ChatMessage
+                {
+                    Content = $"Searching for: {searchQuery}...",
+                    IsUser = false,
+                    IsSystemMessage = true,
+                    Timestamp = DateTime.Now
+                };
+                Messages.Add(processingMessage);
+                
+                // Perform the search
+                try
+                {
+                    string searchResults = await _webSearchService.SearchAsync(searchQuery);
+                    
+                    // Replace the processing message with the results
+                    Messages.Remove(processingMessage);
+                    
+                    var searchResponseMessage = new ChatMessage
+                    {
+                        Content = searchResults,
+                        IsUser = false,
+                        IsSystemMessage = true,
+                        Timestamp = DateTime.Now
+                    };
+                    Messages.Add(searchResponseMessage);
+                    
+                    // Save the search results to storage
+                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+                    {
+                        Content = searchResults,
+                        IsUser = false,
+                        Timestamp = DateTime.Now
+                    });
+                    
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error performing web search: {Message}", ex.Message);
+                    
+                    // Replace the processing message with the error
+                    Messages.Remove(processingMessage);
+                    
+                    var errorMessage = new ChatMessage
+                    {
+                        Content = $"Error performing web search: {ex.Message}",
+                        IsUser = false,
+                        IsSystemMessage = true,
+                        Timestamp = DateTime.Now
+                    };
+                    Messages.Add(errorMessage);
+                    
+                    return;
+                }
+            }
+
             // Process the command
             var result = _commandProcessor.ProcessCommand(command);
 
@@ -777,13 +852,18 @@ namespace Nexi.UI.ViewModels
         // Method to add welcome message for new chats
         public async Task AddWelcomeMessageAsync()
         {
-            var commands = string.Join(", ", _commandProcessor.GetAvailableCommands().Take(5));
-            await AddMessageAsync(new ChatMessage
+            var welcomeMessage = new ChatMessage
             {
-                Content = $"Hello! I'm Nexi. I can help with AI responses and system commands. Try commands like: {commands}, or type 'help' to see all available commands. You can also use the microphone button for voice commands.",
-                Timestamp = DateTime.Now,
-                IsUser = false
-            });
+                Content = "Welcome to Nexi! I'm here to help you. Type a message to start chatting, or use commands like /help to see what I can do.\n\n" +
+                          "New features available:\n" +
+                          "• Web search - Try '/search in chat [query]'\n" +
+                          "• Document creation - Try '/create text [filename]'\n\n" +
+                          "Click the help icon (?) in the bottom left for more commands.",
+                IsUser = false,
+                Timestamp = DateTime.Now
+            };
+            
+            await AddMessageAsync(welcomeMessage);
         }
 
         public override void Dispose()

@@ -172,6 +172,7 @@ namespace Nexi.UI.ViewModels
                     var aiModelService = ((App)App.Current).Services.GetRequiredService<IAIModelService>();
                     var userSettingsService = ((App)App.Current).Services.GetRequiredService<IUserSettingsService>();
                     var llamaSharpService = ((App)App.Current).Services.GetRequiredService<ILlamaSharpService>();
+                    var webSearchService = ((App)App.Current).Services.GetRequiredService<IWebSearchService>();
                     
                     var chatViewModel = new ChatViewModel(
                         _commandProcessor,
@@ -181,6 +182,7 @@ namespace Nexi.UI.ViewModels
                         userSettingsService,
                         llamaSharpService,
                         _chatViewModelLogger,
+                        webSearchService,
                         chatId,
                         false); // Don't create a new session in the constructor
 

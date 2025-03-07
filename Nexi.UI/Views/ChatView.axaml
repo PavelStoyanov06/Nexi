@@ -24,36 +24,129 @@
     <ScrollViewer Grid.Row="0"
                  Name="MessagesScroll"
                  Background="{DynamicResource SystemChromeMediumColor}">
-      <ItemsControl ItemsSource="{CompiledBinding Messages}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <StackPanel Spacing="16" Margin="20"/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="models:ChatMessage">
-            <Border Padding="16"
-                    CornerRadius="20,20,20,4"
-                    BoxShadow="0 2 8 0 #30000000"
-                    Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}, ConverterParameter={StaticResource SystemAccentColor}, FallbackValue=#1A1A1A}"
-                    Classes.system-message="{CompiledBinding IsSystemMessage}"
-                    HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
-                    MaxWidth="600">
-              <StackPanel>
-                <TextBlock Text="{CompiledBinding Content}"
-                         TextWrapping="Wrap"
-                         FontSize="14"
-                         Foreground="White"/>
-                <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
-                         FontSize="11"
-                         Margin="0,8,0,0"
-                         HorizontalAlignment="Right"
-                         Foreground="White"/>
-              </StackPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Command Instructions Panel -->
+        <Border Grid.Row="0"
+                Margin="20,20,20,0"
+                Padding="16"
+                CornerRadius="8"
+                Background="#0D1B3E"
+                BoxShadow="0 2 8 0 #30000000"
+                IsVisible="{CompiledBinding ShowCommandInstructions}">
+          <StackPanel>
+            <Grid>
+              <TextBlock Text="Command Reference" 
+                         FontWeight="Bold" 
+                         FontSize="16" 
+                         Foreground="#00FFFF"
+                         Margin="0,0,0,8"/>
+              <Button HorizontalAlignment="Right"
+                      Background="Transparent"
+                      Padding="4"
+                      Command="{CompiledBinding ToggleCommandInstructionsCommand}"
+                      CommandParameter="False">
+                <material:MaterialIcon Kind="Close" Width="16" Height="16" Foreground="#00FFFF"/>
+              </Button>
+            </Grid>
+            
+            <TextBlock Text="Nexi now supports web search and document creation!" 
+                       Foreground="White" 
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+                       
+            <Expander Header="Web Search Commands" 
+                      Foreground="#00FFFF" 
+                      IsExpanded="True"
+                      Margin="0,4">
+              <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
+                <Run Text="• /search [query] - Search the web and open in browser"/>
+                <LineBreak/>
+                <Run Text="• /search in chat [query] - Show search results in chat"/>
+                <LineBreak/>
+                <Run Text="• /open url [url] - Open a URL in browser"/>
+              </TextBlock>
+            </Expander>
+            
+            <Expander Header="Document Commands" 
+                      Foreground="#00FFFF"
+                      Margin="0,4">
+              <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
+                <Run Text="• /create text [filename] - Create a text file"/>
+                <LineBreak/>
+                <Run Text="• /create document [filename] - Create a Word document"/>
+              </TextBlock>
+            </Expander>
+            
+            <Expander Header="Window Control Commands" 
+                      Foreground="#00FFFF"
+                      Margin="0,4">
+              <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
+                <Run Text="• /minimize - Minimize active window"/>
+                <LineBreak/>
+                <Run Text="• /maximize - Maximize active window"/>
+                <LineBreak/>
+                <Run Text="• /restore - Restore active window"/>
+              </TextBlock>
+            </Expander>
+            
+            <Expander Header="Other Commands" 
+                      Foreground="#00FFFF"
+                      Margin="0,4">
+              <TextBlock TextWrapping="Wrap" Foreground="White" Margin="8,8,0,0">
+                <Run Text="• /help - Show all available commands"/>
+                <LineBreak/>
+                <Run Text="• /time - Show current time"/>
+                <LineBreak/>
+                <Run Text="• /open calculator - Open calculator app"/>
+                <LineBreak/>
+                <Run Text="• /open browser - Open default web browser"/>
+              </TextBlock>
+            </Expander>
+            
+            <TextBlock Text="Tip: You can use these commands with or without the '/' prefix." 
+                       Foreground="White" 
+                       FontStyle="Italic"
+                       Margin="0,8,0,0"/>
+          </StackPanel>
+        </Border>
+        
+        <!-- Messages List -->
+        <ItemsControl Grid.Row="1" ItemsSource="{CompiledBinding Messages}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="16" Margin="20"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:ChatMessage">
+              <Border Padding="16"
+                      CornerRadius="20,20,20,4"
+                      BoxShadow="0 2 8 0 #30000000"
+                      Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}, ConverterParameter={StaticResource SystemAccentColor}, FallbackValue=#1A1A1A}"
+                      Classes.system-message="{CompiledBinding IsSystemMessage}"
+                      HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
+                      MaxWidth="600">
+                <StackPanel>
+                  <TextBlock Text="{CompiledBinding Content}"
+                           TextWrapping="Wrap"
+                           FontSize="14"
+                           Foreground="White"/>
+                  <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
+                           FontSize="11"
+                           Margin="0,8,0,0"
+                           HorizontalAlignment="Right"
+                           Foreground="White"/>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
     </ScrollViewer>
 
     <!-- Input Area -->
@@ -62,7 +155,7 @@
             BorderBrush="{DynamicResource SystemAccentColor}"
             BorderThickness="0,1,0,0"
             BoxShadow="0 -4 8 0 #20000000">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto"
             Margin="20">
         <!-- Voice Toggle -->
         <Border Grid.Column="0"
@@ -79,9 +172,27 @@
             <material:MaterialIcon Kind="Microphone" Width="20" Height="20"/>
           </ToggleButton>
         </Border>
+        
+        <!-- Help Toggle -->
+        <Border Grid.Column="1"
+                CornerRadius="20"
+                Background="Transparent"
+                Margin="8,0,0,0">
+          <Button Width="40"
+                  Height="40"
+                  CornerRadius="20"
+                  BorderBrush="{DynamicResource SystemAccentColor}"
+                  BorderThickness="1.5"
+                  VerticalContentAlignment="Center"
+                  HorizontalContentAlignment="Center"
+                  Command="{CompiledBinding ToggleCommandInstructionsCommand}"
+                  CommandParameter="True">
+            <material:MaterialIcon Kind="HelpCircleOutline" Width="20" Height="20"/>
+          </Button>
+        </Border>
 
         <!-- Text Input -->
-        <TextBox Grid.Column="1"
+        <TextBox Grid.Column="2"
                 Text="{CompiledBinding CurrentMessage}"
                 Watermark="Type a message..."
                 Height="40"
@@ -92,7 +203,7 @@
                 Margin="16,0"/>
 
         <!-- Clear Button -->
-        <Border Grid.Column="2"
+        <Border Grid.Column="3"
                 CornerRadius="20"
                 Background="Transparent"
                 IsVisible="{CompiledBinding HasMessageText}">
@@ -107,7 +218,7 @@
         </Border>
 
         <!-- Send Button -->
-        <Button Grid.Column="3"
+        <Button Grid.Column="4"
                 Width="40"
                 Height="40"
                 CornerRadius="20"

@@ -47,6 +47,8 @@ namespace Nexi.UI
                 options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=NexiDb;Trusted_Connection=True;MultipleActiveResultSets=true"));
 
             // Register services
+            services.AddSingleton<IWebSearchService, WebSearchService>();
+            services.AddSingleton<IDocumentService, DocumentService>();
             services.AddSingleton<ICommandProcessor, CommandProcessor>();
             services.AddSingleton<IVoiceService, VoiceService>();
             services.AddScoped<IChatStorageService, ChatStorageService>();
@@ -97,7 +99,8 @@ namespace Nexi.UI
                 var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 var llamaSharpService = provider.GetRequiredService<ILlamaSharpService>();
                 var logger = provider.GetRequiredService<ILogger<ChatViewModel>>();
-                return new ChatViewModel(commandProcessor, voiceService, chatStorage, aiModelService, userSettingsService, llamaSharpService, logger);
+                var webSearchService = provider.GetRequiredService<IWebSearchService>();
+                return new ChatViewModel(commandProcessor, voiceService, chatStorage, aiModelService, userSettingsService, llamaSharpService, logger, webSearchService);
             });
 
             return services.BuildServiceProvider();
