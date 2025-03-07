@@ -35,19 +35,20 @@
             <Border Padding="16"
                     CornerRadius="20,20,20,4"
                     BoxShadow="0 2 8 0 #30000000"
-                    Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}}"
+                    Background="{CompiledBinding IsUser, Converter={StaticResource BoolToBackgroundConverter}, ConverterParameter={StaticResource SystemAccentColor}, FallbackValue=#1A1A1A}"
+                    Classes.system-message="{CompiledBinding IsSystemMessage}"
                     HorizontalAlignment="{CompiledBinding IsUser, Converter={StaticResource BoolToAlignmentConverter}}"
                     MaxWidth="600">
               <StackPanel>
                 <TextBlock Text="{CompiledBinding Content}"
                          TextWrapping="Wrap"
                          FontSize="14"
-                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
+                         Foreground="White"/>
                 <TextBlock Text="{CompiledBinding Timestamp, StringFormat=\{0:t\}}"
                          FontSize="11"
                          Margin="0,8,0,0"
                          HorizontalAlignment="Right"
-                         Foreground="{CompiledBinding IsUser, Converter={StaticResource BoolToForegroundConverter}}"/>
+                         Foreground="White"/>
               </StackPanel>
             </Border>
           </DataTemplate>
@@ -196,8 +197,20 @@
     <Style Selector="TextBox:focus">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
     </Style>
-    <Style Selector="TextBlock:not(.user)">
+    
+    <!-- Force all text to be white -->
+    <Style Selector="TextBlock">
       <Setter Property="Foreground" Value="White"/>
+    </Style>
+    
+    <!-- System message style -->
+    <Style Selector="Border.system-message">
+      <Setter Property="Background" Value="#0D1B3E"/>
+    </Style>
+    
+    <!-- System message text style -->
+    <Style Selector="Border.system-message TextBlock">
+      <Setter Property="Foreground" Value="#00FFFF"/>
     </Style>
   </UserControl.Styles>
 </UserControl>

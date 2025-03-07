@@ -236,9 +236,9 @@ namespace Nexi.UI.ViewModels
             CurrentMessage = string.Empty;
         }
 
-        private async Task SendMessageAsync(string userMessage)
+        private async Task SendMessageAsync(string userMessageText)
         {
-            if (string.IsNullOrWhiteSpace(userMessage))
+            if (string.IsNullOrWhiteSpace(userMessageText))
             {
                 return;
             }
@@ -248,15 +248,49 @@ namespace Nexi.UI.ViewModels
                 // Set processing state
                 IsProcessing = true;
 
-                // Add user message to the chat
-                var userChatMessage = new ChatMessage
+                // Check if this is a slash command
+                if (userMessageText.StartsWith("/"))
                 {
-                    Content = userMessage,
+                    await ProcessCommandAsync(userMessageText);
+                    return;
+                }
+
+                // Check if this is a command without the slash prefix
+                if (_commandProcessor.IsCommand(userMessageText))
+                {
+                    string response = _commandProcessor.ProcessCommand(userMessageText);
+                    
+                    // Add user message to the chat
+                    var commandUserMessage = new ChatMessage
+                    {
+                        Content = userMessageText,
+                        Timestamp = DateTime.Now,
+                        IsUser = true
+                    };
+                    
+                    await AddMessageAsync(commandUserMessage);
+                    
+                    // Add response
+                    await AddMessageAsync(new ChatMessage
+                    {
+                        Content = response,
+                        Timestamp = DateTime.Now,
+                        IsUser = false,
+                        IsSystemMessage = true
+                    });
+                    
+                    return;
+                }
+
+                // Add user message to the chat
+                var aiUserMessage = new ChatMessage
+                {
+                    Content = userMessageText,
                     Timestamp = DateTime.Now,
                     IsUser = true
                 };
                 
-                await AddMessageAsync(userChatMessage);
+                await AddMessageAsync(aiUserMessage);
 
                 // Check if we have a selected model
                 if (string.IsNullOrEmpty(SelectedModelId))
@@ -316,10 +350,10 @@ namespace Nexi.UI.ViewModels
                 // Use the LlamaSharpService directly for streaming responses
                 try
                 {
-                    _logger.LogInformation("Starting chat with message: {Message}", userMessage);
+                    _logger.LogInformation("Starting chat with message: {Message}", userMessageText);
                     
                     // Get the streaming response
-                    var responseStream = await _llamaSharpService.ChatAsync(userMessage);
+                    var responseStream = await _llamaSharpService.ChatAsync(userMessageText);
                     
                     // Process the tokens as they arrive
                     StringBuilder responseBuilder = new StringBuilder();
@@ -481,8 +515,22 @@ namespace Nexi.UI.ViewModels
                 // Process message
                 string response;
                 
-                // Check if we should use AI model or command processor
-                if (!string.IsNullOrEmpty(SelectedModelId) && await _aiModelService.IsModelDownloadedAsync(SelectedModelId))
+                // First check if the input is a command, regardless of AI model availability
+                if (_commandProcessor.IsCommand(input))
+                {
+                    response = _commandProcessor.ProcessCommand(input);
+                    
+                    // Add response
+                    await AddMessageAsync(new ChatMessage
+                    {
+                        Content = response,
+                        Timestamp = DateTime.Now,
+                        IsUser = false,
+                        IsSystemMessage = true // Mark as system message for proper styling
+                    });
+                }
+                // Then check if we should use AI model
+                else if (!string.IsNullOrEmpty(SelectedModelId) && await _aiModelService.IsModelDownloadedAsync(SelectedModelId))
                 {
                     // Create a response message placeholder
                     var responseMessage = new ChatMessage
@@ -519,18 +567,6 @@ namespace Nexi.UI.ViewModels
                     await AddMessageAsync(new ChatMessage
                     {
                         Content = generatedText,
-                        Timestamp = DateTime.Now,
-                        IsUser = false
-                    });
-                }
-                else if (_commandProcessor.IsCommand(input))
-                {
-                    response = _commandProcessor.ProcessCommand(input);
-                    
-                    // Add response
-                    await AddMessageAsync(new ChatMessage
-                    {
-                        Content = response,
                         Timestamp = DateTime.Now,
                         IsUser = false
                     });
@@ -714,7 +750,7 @@ namespace Nexi.UI.ViewModels
             {
                 Content = result,
                 IsUser = false,
-                IsSystemMessage = true,
+                IsSystemMessage = true, // Mark as system message for proper styling
                 Timestamp = DateTime.Now
             };
             Messages.Add(responseMessage);
@@ -741,9 +777,10 @@ namespace Nexi.UI.ViewModels
         // Method to add welcome message for new chats
         public async Task AddWelcomeMessageAsync()
         {
+            var commands = string.Join(", ", _commandProcessor.GetAvailableCommands().Take(5));
             await AddMessageAsync(new ChatMessage
             {
-                Content = "Hello! I'm Nexi. You can type 'help' to see available commands, or use the microphone button for voice commands.",
+                Content = $"Hello! I'm Nexi. I can help with AI responses and system commands. Try commands like: {commands}, or type 'help' to see all available commands. You can also use the microphone button for voice commands.",
                 Timestamp = DateTime.Now,
                 IsUser = false
             });
