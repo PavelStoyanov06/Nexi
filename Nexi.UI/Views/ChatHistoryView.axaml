@@ -10,99 +10,165 @@
              x:DataType="vm:ChatHistoryViewModel">
 
   <Grid RowDefinitions="Auto,*">
-    <!-- Search Bar -->
-    <Grid Grid.Row="0"
-          Margin="20"
-          ColumnDefinitions="*,Auto">
-      <TextBox Grid.Column="0"
-               Text="{CompiledBinding SearchQuery}"
-               Watermark="Search conversations..."
-               Height="40"
-               CornerRadius="20"
-               Margin="0,0,10,0">
-        <TextBox.InnerLeftContent>
-          <material:MaterialIcon Kind="Search"
-                               Width="20"
-                               Height="20"
-                               Margin="12,0,0,0"/>
-        </TextBox.InnerLeftContent>
-      </TextBox>
+    <!-- Header with Search Bar -->
+    <Border Grid.Row="0"
+            Background="#1E1A33"
+            BoxShadow="0 2 8 0 #30000000"
+            Padding="20">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="8">
+          <TextBlock Text="Chat History" 
+                     FontSize="20" 
+                     FontWeight="SemiBold" 
+                     Foreground="#B388FF"
+                     Margin="0,0,0,8"/>
+          
+          <TextBox Text="{CompiledBinding SearchQuery}"
+                   Watermark="Search conversations..."
+                   Height="40"
+                   CornerRadius="20"
+                   BorderThickness="1.5"
+                   BorderBrush="#B388FF"
+                   Margin="0,0,10,0">
+            <TextBox.InnerLeftContent>
+              <material:MaterialIcon Kind="Search"
+                                   Width="20"
+                                   Height="20"
+                                   Foreground="#B388FF"
+                                   Margin="12,0,0,0"/>
+            </TextBox.InnerLeftContent>
+            <TextBox.Styles>
+              <Style Selector="TextBox:focus">
+                <Setter Property="BorderBrush" Value="#D8C7FF"/>
+              </Style>
+            </TextBox.Styles>
+          </TextBox>
+        </StackPanel>
 
-      <Button Grid.Column="1"
-              Classes="accent-button"
-              Command="{CompiledBinding ClearSearchCommand}"
-              IsVisible="{CompiledBinding !!SearchQuery}">
-        <material:MaterialIcon Kind="Close"/>
-      </Button>
-    </Grid>
+        <Button Grid.Column="1"
+                Classes="accent-button"
+                Command="{CompiledBinding ClearSearchCommand}"
+                IsVisible="{CompiledBinding !!SearchQuery}"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,0">
+          <material:MaterialIcon Kind="Close" Foreground="#B388FF"/>
+        </Button>
+      </Grid>
+    </Border>
 
     <!-- Chat List -->
-    <ScrollViewer Grid.Row="1">
-      <ItemsControl ItemsSource="{CompiledBinding FilteredChats}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <StackPanel Spacing="2"/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:ChatHistoryItemViewModel">
-            <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).OpenChatCommand}"
-                    CommandParameter="{CompiledBinding Id}"
-                    Classes="chat-item"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch">
-              <Grid ColumnDefinitions="Auto,*,Auto,Auto"
-                    Margin="20,12">
-                <!-- Icon -->
-                <Border Grid.Column="0"
-                        Width="40"
-                        Height="40"
-                        CornerRadius="20"
-                        Background="{DynamicResource SystemAccentColor}">
-                  <material:MaterialIcon Kind="Message"
-                                       Width="20"
-                                       Height="20"
-                                       Foreground="White"/>
-                </Border>
-
-                <!-- Chat Info -->
-                <StackPanel Grid.Column="1"
-                          Margin="12,0,0,0"
-                          VerticalAlignment="Center">
-                  <TextBlock Text="{CompiledBinding Title}"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Text="{CompiledBinding LastMessage}"
-                           Opacity="0.6"
-                           TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-
-                <!-- Delete Button -->
-                <Button Grid.Column="2"
-                        Classes="delete-button"
-                        Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).DeleteChatCommand}"
+    <ScrollViewer Grid.Row="1" Background="{DynamicResource SystemChromeMediumColor}">
+      <Grid>
+        <!-- Empty State -->
+        <StackPanel VerticalAlignment="Center" 
+                    HorizontalAlignment="Center"
+                    IsVisible="{CompiledBinding !FilteredChats.Count}">
+          <material:MaterialIcon Kind="ChatOutline" 
+                               Width="64" 
+                               Height="64" 
+                               Foreground="#B388FF"
+                               Margin="0,0,0,16"/>
+          <TextBlock Text="No chats found" 
+                   FontSize="18" 
+                   FontWeight="SemiBold" 
+                   Foreground="White"
+                   HorizontalAlignment="Center"/>
+          <TextBlock Text="Start a new conversation or try a different search" 
+                   Foreground="#CCCCCC"
+                   HorizontalAlignment="Center"
+                   Margin="0,8,0,0"/>
+        </StackPanel>
+        
+        <!-- Chat List -->
+        <ItemsControl ItemsSource="{CompiledBinding FilteredChats}" 
+                      Margin="10"
+                      IsVisible="{CompiledBinding FilteredChats.Count}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="10"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ChatHistoryItemViewModel">
+              <Border Background="#1A1A1A"
+                      CornerRadius="8"
+                      BoxShadow="0 2 8 0 #30000000"
+                      Margin="5">
+                <Button Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).OpenChatCommand}"
                         CommandParameter="{CompiledBinding Id}"
-                        ToolTip.Tip="Delete chat">
-                  <material:MaterialIcon Kind="Delete"
-                                       Width="16"
-                                       Height="16"/>
-                </Button>
+                        Classes="chat-item"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch">
+                  <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+                        Margin="16">
+                    <!-- Icon with Gradient -->
+                    <Border Grid.Column="0"
+                            Width="48"
+                            Height="48"
+                            CornerRadius="24"
+                            BoxShadow="0 2 4 0 #40000000">
+                      <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                          <GradientStop Color="#B388FF" Offset="0"/>
+                          <GradientStop Color="#7C4DFF" Offset="1"/>
+                        </LinearGradientBrush>
+                      </Border.Background>
+                      <material:MaterialIcon Kind="Chat"
+                                           Width="24"
+                                           Height="24"
+                                           Foreground="White"/>
+                    </Border>
 
-                <!-- Timestamp -->
-                <StackPanel Grid.Column="3"
-                          Margin="12,0,0,0"
-                          HorizontalAlignment="Right">
-                  <TextBlock Text="{CompiledBinding LastMessageTime, StringFormat=\{0:t\}}"
-                           Opacity="0.6"/>
-                  <TextBlock Text="{CompiledBinding LastMessageDate, StringFormat=\{0:d\}}"
-                           Opacity="0.6"
-                           FontSize="11"/>
-                </StackPanel>
-              </Grid>
-            </Button>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+                    <!-- Chat Info -->
+                    <StackPanel Grid.Column="1"
+                              Margin="16,0,0,0"
+                              VerticalAlignment="Center">
+                      <TextBlock Text="{CompiledBinding Title}"
+                               FontWeight="SemiBold"
+                               FontSize="16"
+                               Foreground="White"
+                               TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{CompiledBinding LastMessage}"
+                               Foreground="#CCCCCC"
+                               Margin="0,4,0,0"
+                               TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="300"/>
+                    </StackPanel>
+
+                    <!-- Delete Button -->
+                    <Button Grid.Column="2"
+                            Classes="delete-button"
+                            Command="{CompiledBinding $parent[ItemsControl].((vm:ChatHistoryViewModel)DataContext).DeleteChatCommand}"
+                            CommandParameter="{CompiledBinding Id}"
+                            ToolTip.Tip="Delete chat"
+                            Margin="8,0">
+                      <material:MaterialIcon Kind="DeleteOutline"
+                                           Width="20"
+                                           Height="20"/>
+                    </Button>
+
+                    <!-- Timestamp -->
+                    <StackPanel Grid.Column="3"
+                              Margin="8,0,0,0"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center">
+                      <TextBlock Text="{CompiledBinding LastMessageTime, StringFormat=\{0:t\}}"
+                               Foreground="#B388FF"
+                               FontWeight="Medium"/>
+                      <TextBlock Text="{CompiledBinding LastMessageDate, StringFormat=\{0:MMM d\}}"
+                               Foreground="#999999"
+                               FontSize="12"
+                               HorizontalAlignment="Right"
+                               Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </Grid>
+                </Button>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
     </ScrollViewer>
   </Grid>
 
@@ -114,12 +180,15 @@
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="Background" Duration="0:0:0.2"/>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
         </Transitions>
       </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
     </Style>
 
     <Style Selector="Button.chat-item:pointerover">
-      <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+      <Setter Property="Background" Value="#333333"/>
+      <Setter Property="RenderTransform" Value="scale(1.01)"/>
     </Style>
 
     <Style Selector="Button.accent-button">
@@ -130,6 +199,7 @@
       <Setter Property="Transitions">
         <Transitions>
           <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
+          <BrushTransition Property="Background" Duration="0:0:0.2"/>
         </Transitions>
       </Setter>
       <Setter Property="RenderTransform" Value="none"/>
@@ -137,29 +207,37 @@
 
     <Style Selector="Button.accent-button:pointerover">
       <Setter Property="RenderTransform" Value="scale(1.1)"/>
+      <Setter Property="Background" Value="#33B388FF"/>
     </Style>
     
     <Style Selector="Button.delete-button">
-      <Setter Property="Width" Value="32"/>
-      <Setter Property="Height" Value="32"/>
-      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Width" Value="36"/>
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="CornerRadius" Value="18"/>
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#888888"/>
+      <Setter Property="Foreground" Value="#999999"/>
       <Setter Property="Opacity" Value="0.7"/>
-      <Setter Property="Margin" Value="0,0,8,0"/>
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="Background" Duration="0:0:0.2"/>
           <BrushTransition Property="Foreground" Duration="0:0:0.2"/>
           <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2"/>
         </Transitions>
       </Setter>
+      <Setter Property="RenderTransform" Value="none"/>
     </Style>
     
     <Style Selector="Button.delete-button:pointerover">
-      <Setter Property="Background" Value="#FFE0E0"/>
-      <Setter Property="Foreground" Value="#E74C3C"/>
+      <Setter Property="Background" Value="#33FF5252"/>
+      <Setter Property="Foreground" Value="#FF5252"/>
       <Setter Property="Opacity" Value="1.0"/>
+      <Setter Property="RenderTransform" Value="scale(1.1)"/>
+    </Style>
+    
+    <!-- Force all text to be white by default -->
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="White"/>
     </Style>
   </UserControl.Styles>
 </UserControl>
