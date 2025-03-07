@@ -98,7 +98,7 @@ namespace Nexi.UI.ViewModels
                         await _voiceService.StartListeningAsync();
                         await AddMessageAsync(new ChatMessage
                         {
-                            Content = "Voice mode enabled. Speak your commands.",
+                            Content = "Nexi: Voice mode enabled. Speak your commands.",
                             Timestamp = DateTime.Now,
                             IsUser = false
                         });
@@ -108,7 +108,7 @@ namespace Nexi.UI.ViewModels
                         await _voiceService.StopListeningAsync();
                         await AddMessageAsync(new ChatMessage
                         {
-                            Content = "Voice mode disabled.",
+                            Content = "Nexi: Voice mode disabled.",
                             Timestamp = DateTime.Now,
                             IsUser = false
                         });
@@ -362,6 +362,26 @@ namespace Nexi.UI.ViewModels
             // Handle case where there might be multiple newlines at the end
             response = response.TrimEnd('\r', '\n');
             
+            // If the response is just "Thinking...", don't add the prefix
+            if (response == "Thinking...")
+            {
+                return response;
+            }
+            
+            // If the response doesn't already start with "Nexi:", add it
+            if (!response.StartsWith("Nexi:"))
+            {
+                // If the response starts with "System:", replace it with "Nexi:"
+                if (response.StartsWith("System:"))
+                {
+                    response = "Nexi:" + response.Substring(7);
+                }
+                else
+                {
+                    response = "Nexi: " + response;
+                }
+            }
+            
             return response;
         }
 
@@ -486,7 +506,7 @@ namespace Nexi.UI.ViewModels
                         // Update the message to show an error - use InvokeAsync for immediate UI update
                         await Dispatcher.UIThread.InvokeAsync(() => 
                         {
-                            responseMessage.Content = "Sorry, I couldn't generate a response. Please try again.";
+                            responseMessage.Content = "Nexi: Sorry, I couldn't generate a response. Please try again.";
                             
                             // Force property change notification
                             var index = Messages.IndexOf(responseMessage);
@@ -537,7 +557,7 @@ namespace Nexi.UI.ViewModels
                 }
                 else
                 {
-                    response = "I need an AI model to respond to that. Please select a model in the Settings or use a command. Type 'help' to see available commands.";
+                    response = "Nexi: I need an AI model to respond to that. Please select a model in the Settings or use a command. Type 'help' to see available commands.";
                     
                     // Add response
                     await AddMessageAsync(new ChatMessage
@@ -556,7 +576,7 @@ namespace Nexi.UI.ViewModels
                 // Add error message to chat
                 await AddMessageAsync(new ChatMessage
                 {
-                    Content = "Sorry, I encountered an error processing your request. Please try again.",
+                    Content = "Nexi: Sorry, I encountered an error processing your request. Please try again.",
                     Timestamp = DateTime.Now,
                     IsUser = false,
                     IsSystemMessage = true
@@ -873,7 +893,7 @@ namespace Nexi.UI.ViewModels
         {
             var welcomeMessage = new ChatMessage
             {
-                Content = "Welcome to Nexi! I'm here to help you. Type a message to start chatting, or use commands like /help to see what I can do.\n\n" +
+                Content = "Nexi: Welcome to Nexi! I'm here to help you. Type a message to start chatting, or use commands like /help to see what I can do.\n\n" +
                           "New features available:\n" +
                           "• Web search - Try '/search in chat [query]'\n" +
                           "• Document creation - Try '/create text [filename]'\n" +
