@@ -1,0 +1,162 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Nexi.UI.ViewModels"
+             xmlns:material="using:Material.Icons.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Nexi.UI.Views.SystemInfoView"
+             x:CompileBindings="True"
+             x:DataType="vm:SystemInfoViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <Border Grid.Row="0"
+            Background="{DynamicResource SystemChromeMediumColor}"
+            BoxShadow="0 2 8 0 #30000000">
+      <Grid ColumnDefinitions="*,Auto" Margin="32,24">
+        <StackPanel Grid.Column="0" Spacing="8">
+          <TextBlock Text="System Information"
+                   FontFamily="Cascadia Code"
+                   FontSize="32"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource SystemAccentColor}"/>
+          <TextBlock Text="Hardware and software details of your system"
+                   FontSize="16"
+                   Opacity="0.7"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- System Info Content -->
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="32" Spacing="24">
+        
+        <!-- OS Information -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="DesktopTowerMonitor"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="Operating System"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+            
+            <TextBlock Text="{Binding OSInfo}"
+                     FontSize="16"
+                     Margin="36,0,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- CPU Information -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="Cpu64Bit"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="CPU Information"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+            
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="36,0,0,0">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Processor: " 
+                       FontWeight="SemiBold" 
+                       Margin="0,0,8,8"/>
+              <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding CPUInfo}" 
+                       Margin="0,0,0,8"/>
+              
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="Cores: " 
+                       FontWeight="SemiBold" 
+                       Margin="0,0,8,0"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CPUCoreCount}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- GPU Information -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="VideoVintage"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="GPU Information"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+            
+            <TextBlock Text="{Binding GPUInfo}"
+                     FontSize="16"
+                     Margin="36,0,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Memory Information -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="Memory"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="Memory Information"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+            
+            <TextBlock Text="{Binding RAMInfo}"
+                     FontSize="16"
+                     Margin="36,0,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Storage Information -->
+        <Border Background="{DynamicResource SystemChromeMediumColor}"
+                CornerRadius="12"
+                BoxShadow="0 2 8 0 #30000000">
+          <StackPanel Margin="24,20">
+            <StackPanel Orientation="Horizontal"
+                      Spacing="12"
+                      Margin="0,0,0,16">
+              <material:MaterialIcon Kind="HarddiskPlus"
+                                   Width="24"
+                                   Height="24"
+                                   Foreground="{DynamicResource SystemAccentColor}"/>
+              <TextBlock Text="Storage Information"
+                       FontSize="20"
+                       FontWeight="SemiBold"/>
+            </StackPanel>
+            
+            <TextBlock Text="{Binding DiskSpaceInfo}"
+                     FontSize="16"
+                     Margin="36,0,0,0"/>
+          </StackPanel>
+        </Border>
+        
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl> 

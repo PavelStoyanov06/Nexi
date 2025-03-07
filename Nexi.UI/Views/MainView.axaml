@@ -93,6 +93,19 @@
               </StackPanel>
             </Grid>
           </Button>
+
+          <Button Classes="sidebar-button" Command="{CompiledBinding SystemInfoCommand}">
+            <Grid>
+              <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                <material:MaterialIcon Kind="Information"/>
+                <TextBlock Text="System Info"
+                         IsVisible="{CompiledBinding IsSidebarExpanded}"
+                         VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Button>
         </StackPanel>
       </DockPanel>
     </Border>
@@ -116,6 +129,9 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
           <views:SettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SystemInfoViewModel}">
+          <views:SystemInfoView />
         </DataTemplate>
       </TransitioningContentControl.DataTemplates>
     </TransitioningContentControl>

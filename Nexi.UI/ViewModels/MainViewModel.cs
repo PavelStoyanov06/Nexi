@@ -71,6 +71,7 @@ namespace Nexi.UI.ViewModels
             ChatHistoryCommand = ReactiveCommand.Create(NavigateToChatHistory);
             ModelsCommand = ReactiveCommand.Create(NavigateToModels);
             SettingsCommand = ReactiveCommand.Create(NavigateToSettings);
+            SystemInfoCommand = ReactiveCommand.Create(NavigateToSystemInfo);
 
             // Load the selected model from settings
             _ = RefreshSelectedModelAsync();
@@ -192,6 +193,7 @@ namespace Nexi.UI.ViewModels
         public ICommand ChatHistoryCommand { get; }
         public ICommand ModelsCommand { get; }
         public ICommand SettingsCommand { get; }
+        public ICommand SystemInfoCommand { get; }
 
         private async void NavigateToNewChat()
         {
@@ -314,6 +316,12 @@ namespace Nexi.UI.ViewModels
                 });
                 
             CurrentPage = settingsVm;
+        }
+
+        private void NavigateToSystemInfo()
+        {
+            var systemInfoService = _serviceProvider.GetRequiredService<ISystemInfoService>();
+            CurrentPage = new SystemInfoViewModel(systemInfoService);
         }
         
         public override void Dispose()

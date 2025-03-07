@@ -54,6 +54,7 @@ namespace Nexi.UI
             services.AddScoped<IChatStorageService, ChatStorageService>();
             services.AddScoped<IAIModelService, AIModelService>();
             services.AddScoped<IUserSettingsService, UserSettingsService>();
+            services.AddScoped<ISystemInfoService, SystemInfoService>();
             
             // Register LlamaSharp service as a singleton with proper disposal
             services.AddSingleton<ILlamaSharpService>(provider => {
