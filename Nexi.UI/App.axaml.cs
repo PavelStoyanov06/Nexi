@@ -87,8 +87,9 @@ namespace Nexi.UI
             services.AddTransient(provider => {
                 var userSettingsService = provider.GetRequiredService<IUserSettingsService>();
                 var aiModelService = provider.GetRequiredService<IAIModelService>();
+                var voiceService = provider.GetRequiredService<IVoiceService>();
                 var logger = provider.GetRequiredService<ILogger<SettingsViewModel>>();
-                return new SettingsViewModel(userSettingsService, aiModelService, logger);
+                return new SettingsViewModel(userSettingsService, aiModelService, voiceService, logger);
             });
 
             services.AddTransient(provider => {

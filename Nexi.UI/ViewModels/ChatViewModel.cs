@@ -722,87 +722,100 @@ namespace Nexi.UI.ViewModels
             return firstUserMessage;
         }
 
-        private async Task ProcessCommandAsync(string command)
+        private async Task CreateDocumentWithLastAiMessage(string command)
         {
-            // Trim the command and remove the leading slash
-            command = command.Trim();
-            if (command.StartsWith("/"))
+            // Check if there's a previous AI message that we can use as content
+            var lastAiMessage = Messages
+                .Where(m => !m.IsUser && !m.IsSystemMessage)
+                .LastOrDefault();
+            
+            if (lastAiMessage != null)
             {
-                command = command.Substring(1);
-            }
-
-            // Add the command to the chat
-            var userMessage = new ChatMessage
-            {
-                Content = "/" + command,
-                IsUser = true,
-                Timestamp = DateTime.Now
-            };
-            Messages.Add(userMessage);
-
-            // Clear the input
-            CurrentMessage = string.Empty;
-
-            // Special handling for search in chat command
-            if (command.StartsWith("search in chat ", StringComparison.OrdinalIgnoreCase))
-            {
-                string searchQuery = command.Substring("search in chat".Length).Trim();
+                // Add the AI content to the command
+                string originalCommand = command;
+                command = $"{command} | {lastAiMessage.Content}";
                 
-                // Add a processing message
-                var processingMessage = new ChatMessage
+                // Process the modified command
+                var commandResult = _commandProcessor.ProcessCommand(command);
+                
+                // Add the result to the chat
+                var commandResponseMessage = new ChatMessage
                 {
-                    Content = $"Searching for: {searchQuery}...",
+                    Content = commandResult,
                     IsUser = false,
                     IsSystemMessage = true,
                     Timestamp = DateTime.Now
                 };
-                Messages.Add(processingMessage);
+                Messages.Add(commandResponseMessage);
                 
-                // Perform the search
-                try
+                // Save the command and response to storage
+                await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
                 {
-                    string searchResults = await _webSearchService.SearchAsync(searchQuery);
-                    
-                    // Replace the processing message with the results
-                    Messages.Remove(processingMessage);
-                    
-                    var searchResponseMessage = new ChatMessage
-                    {
-                        Content = searchResults,
-                        IsUser = false,
-                        IsSystemMessage = true,
-                        Timestamp = DateTime.Now
-                    };
-                    Messages.Add(searchResponseMessage);
-                    
-                    // Save the search results to storage
-                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                    {
-                        Content = searchResults,
-                        IsUser = false,
-                        Timestamp = DateTime.Now
-                    });
-                    
-                    return;
-                }
-                catch (Exception ex)
+                    Content = "/" + originalCommand,
+                    IsUser = true,
+                    Timestamp = DateTime.Now
+                });
+                
+                await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
                 {
-                    _logger.LogError(ex, "Error performing web search: {Message}", ex.Message);
-                    
-                    // Replace the processing message with the error
-                    Messages.Remove(processingMessage);
-                    
-                    var errorMessage = new ChatMessage
-                    {
-                        Content = $"Error performing web search: {ex.Message}",
-                        IsUser = false,
-                        IsSystemMessage = true,
-                        Timestamp = DateTime.Now
-                    };
-                    Messages.Add(errorMessage);
-                    
-                    return;
-                }
+                    Content = commandResult,
+                    IsUser = false,
+                    Timestamp = DateTime.Now
+                });
+                
+                return;
+            }
+            
+            // If no AI message found, process as normal command
+            var result = _commandProcessor.ProcessCommand(command);
+            
+            // Add the result to the chat
+            var responseMessage = new ChatMessage
+            {
+                Content = result,
+                IsUser = false,
+                IsSystemMessage = true,
+                Timestamp = DateTime.Now
+            };
+            Messages.Add(responseMessage);
+            
+            // Save the command and response to storage
+            await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+            {
+                Content = "/" + command,
+                IsUser = true,
+                Timestamp = DateTime.Now
+            });
+            
+            await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
+            {
+                Content = result,
+                IsUser = false,
+                Timestamp = DateTime.Now
+            });
+        }
+
+        private async Task ProcessCommandAsync(string command)
+        {
+            // Remove the leading slash if present
+            if (command.StartsWith("/"))
+            {
+                command = command.Substring(1);
+            }
+            
+            // Check if the command is valid
+            if (!_commandProcessor.IsCommand(command))
+            {
+                var errorMessage = new ChatMessage
+                {
+                    Content = $"Unknown command: /{command}. Type 'help' to see available commands.",
+                    IsUser = false,
+                    IsSystemMessage = true,
+                    Timestamp = DateTime.Now
+                };
+                Messages.Add(errorMessage);
+                
+                return;
             }
             
             // Special handling for AI-assisted document creation
@@ -810,50 +823,8 @@ namespace Nexi.UI.ViewModels
                  command.StartsWith("create document ", StringComparison.OrdinalIgnoreCase)) && 
                 !command.Contains("|"))
             {
-                // Check if there's a previous AI message that we can use as content
-                var lastAiMessage = Messages
-                    .Where(m => !m.IsUser && !m.IsSystemMessage)
-                    .LastOrDefault();
-                
-                if (lastAiMessage != null && lastAiMessage != _lastUsedAiMessage)
-                {
-                    // Add the AI content to the command
-                    string originalCommand = command;
-                    command = $"{command} | {lastAiMessage.Content}";
-                    
-                    // Process the modified command
-                    var commandResult = _commandProcessor.ProcessCommand(command);
-                    
-                    // Add the result to the chat
-                    var commandResponseMessage = new ChatMessage
-                    {
-                        Content = commandResult,
-                        IsUser = false,
-                        IsSystemMessage = true,
-                        Timestamp = DateTime.Now
-                    };
-                    Messages.Add(commandResponseMessage);
-                    
-                    // Save the command and response to storage
-                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                    {
-                        Content = "/" + originalCommand,
-                        IsUser = true,
-                        Timestamp = DateTime.Now
-                    });
-                    
-                    await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
-                    {
-                        Content = commandResult,
-                        IsUser = false,
-                        Timestamp = DateTime.Now
-                    });
-                    
-                    // Mark this AI message as used
-                    _lastUsedAiMessage = lastAiMessage;
-                    
-                    return;
-                }
+                await CreateDocumentWithLastAiMessage(command);
+                return;
             }
 
             // Process the command
@@ -868,7 +839,7 @@ namespace Nexi.UI.ViewModels
                 Timestamp = DateTime.Now
             };
             Messages.Add(responseMessage);
-
+            
             // Save the command and response to storage
             await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
             {
@@ -876,16 +847,13 @@ namespace Nexi.UI.ViewModels
                 IsUser = true,
                 Timestamp = DateTime.Now
             });
-
+            
             await _chatStorage.AddMessageAsync(_sessionId, new ChatMessageData
             {
                 Content = result,
                 IsUser = false,
                 Timestamp = DateTime.Now
             });
-
-            // Scroll to bottom
-            ScrollToBottom?.Invoke();
         }
 
         // Method to add welcome message for new chats

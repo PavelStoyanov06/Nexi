@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Threading.Tasks;
+using System.Text;
 
 namespace Nexi.Services
 {
@@ -17,11 +18,35 @@ namespace Nexi.Services
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+        
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+        
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+        
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+        
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        
+        // Delegate for EnumWindows callback
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         // Window state constants
         private const int SW_MINIMIZE = 6;
         private const int SW_MAXIMIZE = 3;
         private const int SW_RESTORE = 9;
+        
+        // Window messages
+        private const uint WM_CLOSE = 0x0010;
 
         public CommandProcessor(IWebSearchService webSearchService, IDocumentService documentService)
         {
@@ -33,6 +58,8 @@ namespace Nexi.Services
                 ["minimize"] = MinimizeActiveWindow,
                 ["maximize"] = MaximizeActiveWindow,
                 ["restore"] = RestoreActiveWindow,
+                ["close"] = CloseActiveWindow,
+                ["close window"] = CloseActiveWindow,
                 ["open browser"] = OpenDefaultBrowser,
                 ["open calculator"] = OpenCalculator,
                 ["help"] = () => $"Available commands: {string.Join(", ", GetAvailableCommands())}",
@@ -77,27 +104,120 @@ namespace Nexi.Services
             }
             return "No active window to restore";
         }
+        
+        private string CloseActiveWindow()
+        {
+            var handle = GetForegroundWindow();
+            if (handle != IntPtr.Zero)
+            {
+                // Get the window title for feedback
+                string windowTitle = GetWindowTitle(handle);
+                
+                // Post a close message to the window
+                bool result = PostMessage(handle, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                if (result)
+                {
+                    return $"Closed window: {(string.IsNullOrEmpty(windowTitle) ? "Untitled" : windowTitle)}";
+                }
+                return "Failed to close the active window";
+            }
+            return "No active window to close";
+        }
+        
+        private string GetWindowTitle(IntPtr hWnd)
+        {
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0)
+                return string.Empty;
+                
+            StringBuilder windowTitle = new StringBuilder(length + 1);
+            GetWindowText(hWnd, windowTitle, windowTitle.Capacity);
+            return windowTitle.ToString();
+        }
+        
+        private bool IsProcessRunning(string processName)
+        {
+            Process[] processes = Process.GetProcessesByName(processName);
+            return processes.Length > 0;
+        }
+        
+        private IntPtr FindWindowByProcessName(string processName)
+        {
+            IntPtr foundWindow = IntPtr.Zero;
+            Process[] processes = Process.GetProcessesByName(processName);
+            
+            if (processes.Length == 0)
+                return IntPtr.Zero;
+                
+            foreach (Process process in processes)
+            {
+                // Try to use the main window handle first
+                if (process.MainWindowHandle != IntPtr.Zero)
+                    return process.MainWindowHandle;
+            }
+            
+            // If no main window handle was found, use EnumWindows to find a window
+            uint targetProcessId = (uint)processes[0].Id;
+            
+            EnumWindows((hWnd, lParam) => {
+                uint processId;
+                GetWindowThreadProcessId(hWnd, out processId);
+                if (processId == targetProcessId)
+                {
+                    foundWindow = hWnd;
+                    return false; // Stop enumeration
+                }
+                return true; // Continue enumeration
+            }, IntPtr.Zero);
+            
+            return foundWindow;
+        }
 
         private string OpenDefaultBrowser()
         {
             try
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                // Check if browsers are already running and activate them
+                bool browserFound = false;
+                
+                // Check for Chrome, Edge, Firefox, etc.
+                string[] browserProcesses = new[] { "chrome", "msedge", "firefox", "opera", "brave" };
+                
+                foreach (string browser in browserProcesses)
                 {
-                    Process.Start(new ProcessStartInfo("cmd", "/c start https://www.google.com")
+                    IntPtr browserWindow = FindWindowByProcessName(browser);
+                    if (browserWindow != IntPtr.Zero)
                     {
-                        CreateNoWindow = true
-                    });
+                        // Activate the browser window
+                        ShowWindow(browserWindow, SW_RESTORE);
+                        SetForegroundWindow(browserWindow);
+                        browserFound = true;
+                        break;
+                    }
                 }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                
+                // If no browser was found, open a new one
+                if (!browserFound)
                 {
-                    Process.Start("xdg-open", "https://www.google.com");
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        Process.Start(new ProcessStartInfo("cmd", "/c start https://www.google.com")
+                        {
+                            CreateNoWindow = true
+                        });
+                    }
+                    else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    {
+                        Process.Start("xdg-open", "https://www.google.com");
+                    }
+                    else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    {
+                        Process.Start("open", "https://www.google.com");
+                    }
+                    return "Opening new browser window";
                 }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    Process.Start("open", "https://www.google.com");
-                }
-                return "Opening browser";
+                
+                return "Activated existing browser window";
             }
             catch (Exception ex)
             {
@@ -111,14 +231,36 @@ namespace Nexi.Services
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
+                    // Check if calculator is already running
+                    IntPtr calcWindow = FindWindowByProcessName("calc");
+                    if (calcWindow != IntPtr.Zero)
+                    {
+                        // Activate the calculator window
+                        ShowWindow(calcWindow, SW_RESTORE);
+                        SetForegroundWindow(calcWindow);
+                        return "Activated existing calculator window";
+                    }
+                    
+                    // Open new calculator if none found
                     Process.Start("calc.exe");
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 {
+                    // For Linux, check for gnome-calculator
+                    if (IsProcessRunning("gnome-calculator"))
+                    {
+                        return "Calculator is already running";
+                    }
                     Process.Start("gnome-calculator");
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
+                    // For macOS, try to activate existing Calculator
+                    Process[] calculators = Process.GetProcessesByName("Calculator");
+                    if (calculators.Length > 0)
+                    {
+                        return "Calculator is already running";
+                    }
                     Process.Start("open", "-a Calculator");
                 }
                 return "Opening calculator";

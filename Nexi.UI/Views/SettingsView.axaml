@@ -117,12 +117,17 @@
             </StackPanel>
 
             <StackPanel Spacing="16">
-              <ComboBox SelectedIndex="{CompiledBinding SelectedInputDeviceIndex}"
-                      Width="300"
-                      HorizontalAlignment="Left">
-                <ComboBoxItem>Default Microphone</ComboBoxItem>
-                <ComboBoxItem>Headset Microphone</ComboBoxItem>
-              </ComboBox>
+              <StackPanel Spacing="8">
+                <TextBlock Text="Microphone"
+                         Opacity="0.7"/>
+                <ComboBox SelectedIndex="{CompiledBinding SelectedInputDeviceIndex}"
+                        ItemsSource="{CompiledBinding AvailableInputDevices}"
+                        Width="300"
+                        HorizontalAlignment="Left"/>
+                <TextBlock Text="Only connected microphones will be shown in this list"
+                         Opacity="0.6"
+                         FontSize="12"/>
+              </StackPanel>
 
               <StackPanel Spacing="8">
                 <TextBlock Text="Input Sensitivity"
@@ -132,6 +137,10 @@
                         Maximum="100"
                         Width="300"
                         HorizontalAlignment="Left"/>
+                <TextBlock Text="Higher values increase sensitivity for better speech recognition, but may result in more false detections"
+                         Opacity="0.6"
+                         FontSize="12"
+                         TextWrapping="Wrap"/>
               </StackPanel>
             </StackPanel>
           </StackPanel>

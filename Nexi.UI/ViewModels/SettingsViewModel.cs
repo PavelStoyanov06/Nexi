@@ -16,6 +16,7 @@ namespace Nexi.UI.ViewModels
     {
         private readonly IUserSettingsService _userSettingsService;
         private readonly IAIModelService _aiModelService;
+        private readonly IVoiceService _voiceService;
         private readonly ILogger<SettingsViewModel> _logger;
 
         private int _selectedModelIndex;
@@ -27,6 +28,7 @@ namespace Nexi.UI.ViewModels
         private bool _useSystemAccent = true;
         private string? _selectedModelId;
         private ObservableCollection<AIModelData> _availableModels;
+        private ObservableCollection<string> _availableInputDevices;
         private bool _isLoading = false;
         private int _contextSize = 1024;
         private int _gpuLayerCount = 5;
@@ -34,13 +36,16 @@ namespace Nexi.UI.ViewModels
         public SettingsViewModel(
             IUserSettingsService userSettingsService,
             IAIModelService aiModelService,
+            IVoiceService voiceService,
             ILogger<SettingsViewModel> logger)
         {
             _userSettingsService = userSettingsService;
             _aiModelService = aiModelService;
+            _voiceService = voiceService;
             _logger = logger;
 
             _availableModels = new ObservableCollection<AIModelData>();
+            _availableInputDevices = new ObservableCollection<string>();
 
             // Initialize commands
             SaveSettingsCommand = ReactiveCommand.CreateFromTask(SaveSettingsAsync);
@@ -90,7 +95,10 @@ namespace Nexi.UI.ViewModels
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(async sensitivity => {
                     try {
-                        await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)sensitivity);
+                        int sensitivityValue = (int)sensitivity;
+                        await _voiceService.SetInputSensitivityAsync(sensitivityValue);
+                        await _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, sensitivityValue);
+                        _logger.LogInformation($"Updated input sensitivity to {sensitivityValue}");
                     } catch (Exception ex) {
                         _logger.LogError(ex, "Error updating input sensitivity");
                     }
@@ -130,6 +138,12 @@ namespace Nexi.UI.ViewModels
         {
             get => _availableModels;
             set => this.RaiseAndSetIfChanged(ref _availableModels, value);
+        }
+
+        public ObservableCollection<string> AvailableInputDevices
+        {
+            get => _availableInputDevices;
+            set => this.RaiseAndSetIfChanged(ref _availableInputDevices, value);
         }
 
         public bool IsLoading
@@ -190,15 +204,54 @@ namespace Nexi.UI.ViewModels
         }
 
         private string? _selectedInputDevice;
+        public string? SelectedInputDevice
+        {
+            get => _selectedInputDevice;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _selectedInputDevice, value);
+                if (value != null)
+                {
+                    _logger.LogInformation($"Setting input device to {value}");
+                    _ = UpdateInputDeviceAsync(value);
+                }
+            }
+        }
+
         public int SelectedInputDeviceIndex
         {
             get => _selectedInputDeviceIndex;
             set
             {
-                this.RaiseAndSetIfChanged(ref _selectedInputDeviceIndex, value);
-                // Map index to actual device name
-                _selectedInputDevice = value == 0 ? "Default" : "Headset";
-                _ = _userSettingsService.UpdateVoiceSettingsAsync(_selectedInputDevice, (int)InputSensitivity);
+                if (_selectedInputDeviceIndex != value)
+                {
+                    this.RaiseAndSetIfChanged(ref _selectedInputDeviceIndex, value);
+                    if (_availableInputDevices.Count > value && value >= 0)
+                    {
+                        string newDevice = _availableInputDevices[value];
+                        if (newDevice != _selectedInputDevice)
+                        {
+                            _selectedInputDevice = newDevice;
+                            this.RaisePropertyChanged(nameof(SelectedInputDevice));
+                            _logger.LogInformation($"Selected input device changed to {newDevice} via index change");
+                            _ = UpdateInputDeviceAsync(newDevice);
+                        }
+                    }
+                }
+            }
+        }
+
+        private async Task UpdateInputDeviceAsync(string deviceName)
+        {
+            try
+            {
+                await _voiceService.SetInputDeviceAsync(deviceName);
+                await _userSettingsService.UpdateVoiceSettingsAsync(deviceName, (int)InputSensitivity);
+                _logger.LogInformation($"Updated input device to {deviceName}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating input device to {deviceName}");
             }
         }
 
@@ -254,17 +307,46 @@ namespace Nexi.UI.ViewModels
                 _contextSize = settings.ContextSize;
                 _gpuLayerCount = settings.GpuLayerCount;
                 
-                // Set input device index
-                if (settings.SelectedInputDevice == "Default")
+                // Load available input devices
+                await LoadAvailableInputDevicesAsync();
+                
+                // Set input device from settings
+                if (!string.IsNullOrEmpty(_selectedInputDevice))
+                {
+                    int index = _availableInputDevices.IndexOf(_selectedInputDevice);
+                    if (index >= 0)
+                    {
+                        _selectedInputDeviceIndex = index;
+                    }
+                    else
+                    {
+                        // If the saved device isn't in the list, default to the first device
+                        _selectedInputDeviceIndex = 0;
+                        if (_availableInputDevices.Count > 0)
+                        {
+                            _selectedInputDevice = _availableInputDevices[0];
+                        }
+                    }
+                }
+                else
+                {
+                    // Default to the first device if none is selected
                     _selectedInputDeviceIndex = 0;
-                else if (settings.SelectedInputDevice == "Headset")
-                    _selectedInputDeviceIndex = 1;
+                    if (_availableInputDevices.Count > 0)
+                    {
+                        _selectedInputDevice = _availableInputDevices[0];
+                    }
+                }
+                
+                // Set the input sensitivity
+                await _voiceService.SetInputSensitivityAsync((int)_inputSensitivity);
                 
                 // Refresh models (this will also set the selected model)
                 await RefreshModelsAsync();
                 
                 // Update UI properties
                 this.RaisePropertyChanged(nameof(UseGPU));
+                this.RaisePropertyChanged(nameof(SelectedInputDevice));
                 this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
                 this.RaisePropertyChanged(nameof(InputSensitivity));
                 this.RaisePropertyChanged(nameof(SelectedTheme));
@@ -279,6 +361,69 @@ namespace Nexi.UI.ViewModels
             finally
             {
                 IsLoading = false;
+            }
+        }
+
+        private async Task LoadAvailableInputDevicesAsync()
+        {
+            try
+            {
+                // First use the cached list
+                var devices = _voiceService.GetAvailableInputDevices();
+                _availableInputDevices.Clear();
+                
+                foreach (var device in devices)
+                {
+                    _availableInputDevices.Add(device);
+                }
+                
+                this.RaisePropertyChanged(nameof(AvailableInputDevices));
+                _logger.LogInformation($"Loaded {_availableInputDevices.Count} input devices from cache");
+                
+                // Then refresh the list asynchronously
+                devices = await _voiceService.RefreshAvailableInputDevicesAsync();
+                _availableInputDevices.Clear();
+                
+                foreach (var device in devices)
+                {
+                    _availableInputDevices.Add(device);
+                }
+                
+                this.RaisePropertyChanged(nameof(AvailableInputDevices));
+                _logger.LogInformation($"Refreshed {_availableInputDevices.Count} input devices");
+                
+                // Update selected device if needed
+                if (!string.IsNullOrEmpty(_selectedInputDevice))
+                {
+                    int index = _availableInputDevices.IndexOf(_selectedInputDevice);
+                    if (index >= 0)
+                    {
+                        _selectedInputDeviceIndex = index;
+                        this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
+                    }
+                    else if (_availableInputDevices.Count > 0)
+                    {
+                        // If previously selected device is no longer available, select Default
+                        _selectedInputDeviceIndex = 0;
+                        _selectedInputDevice = _availableInputDevices[0];
+                        this.RaisePropertyChanged(nameof(SelectedInputDeviceIndex));
+                        this.RaisePropertyChanged(nameof(SelectedInputDevice));
+                        
+                        // Update settings with new device
+                        await UpdateInputDeviceAsync(_selectedInputDevice);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading available input devices");
+                
+                // Add some default devices as fallback
+                _availableInputDevices.Clear();
+                _availableInputDevices.Add("Default");
+                _availableInputDevices.Add("Built-in Microphone");
+                
+                this.RaisePropertyChanged(nameof(AvailableInputDevices));
             }
         }
 
